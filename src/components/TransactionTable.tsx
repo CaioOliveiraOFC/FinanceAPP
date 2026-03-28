@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Search, Trash2, Edit3, CheckSquare, Square, Users, MoreHorizontal, X } from 'lucide-react';
-import { Transaction } from '../types';
+import { Transaction, Category, Owner } from '../types';
 import { formatPeriod } from '../utils/date';
 import TransactionDetailsModal from './TransactionDetailsModal';
 
 interface TransactionTableProps {
   transactions: Transaction[];
-  categories: string[];
-  owners: string[];
+  categories: Category[];
+  owners: Owner[];
   onUpdate: (id: string, updates: Partial<Transaction>) => void;
   onBatchUpdate: (ids: string[], updates: Partial<Transaction>) => void;
   onDelete: (ids: string[]) => void;
@@ -75,8 +75,8 @@ export default function TransactionTable({
     if (selectedIds.size === 0) return;
     
     const updates: Partial<Transaction> = {};
-    if (batchCategory) updates.category = batchCategory;
-    if (batchOwner) updates.owner = batchOwner;
+    if (batchCategory) updates.category_id = batchCategory;
+    if (batchOwner) updates.owner_id = batchOwner;
     
     if (Object.keys(updates).length > 0) {
       onBatchUpdate(Array.from(selectedIds), updates);
@@ -162,7 +162,7 @@ export default function TransactionTable({
             >
               <option value="">Todas Categorias</option>
               {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
 
@@ -173,7 +173,7 @@ export default function TransactionTable({
             >
               <option value="">Todos Responsáveis</option>
               {owners.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <option key={o.id} value={o.id}>{o.name}</option>
               ))}
             </select>
           </div>
@@ -200,7 +200,7 @@ export default function TransactionTable({
                     className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
                   >
                     <option value="">Alterar Categoria...</option>
-                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   
                   <select
@@ -209,7 +209,7 @@ export default function TransactionTable({
                     className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
                   >
                     <option value="">Alterar Responsável...</option>
-                    {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
 
                   <button
@@ -301,24 +301,24 @@ export default function TransactionTable({
                     </td>
                     <td className="px-4 py-3">
                       <select
-                        value={t.category}
-                        onChange={(e) => onUpdate(t.id, { category: e.target.value })}
+                        value={t.category_id || ''}
+                        onChange={(e) => onUpdate(t.id, { category_id: e.target.value })}
                         className="bg-transparent border-none text-sm text-gray-600 focus:ring-0 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 -ml-1 outline-none"
                       >
-                        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                        {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </td>
                     <td className="px-4 py-3">
                       <select
-                        value={t.owner}
-                        onChange={(e) => onUpdate(t.id, { owner: e.target.value })}
+                        value={t.owner_id || ''}
+                        onChange={(e) => onUpdate(t.id, { owner_id: e.target.value })}
                         className="bg-transparent border-none text-sm text-gray-600 focus:ring-0 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 -ml-1 outline-none"
                       >
-                        {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                        {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                       </select>
                     </td>
-                    <td className={`px-4 py-3 text-right font-medium ${t.amount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {t.amount > 0 ? '-' : '+'}{formatCurrency(t.amount)}
+                    <td className={`px-4 py-3 text-right font-medium ${t.type === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {t.type === 'expense' ? '-' : '+'}{formatCurrency(t.amount)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Users, Percent, Plus, Trash2 } from 'lucide-react';
-import { Transaction } from '../types';
+import { Transaction, Owner, Split } from '../types';
 
 interface SplitModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
-  owners: string[];
-  onApplySplit: (id: string, splitsData: Array<{ with: string; percentage: number; amount: number }> | undefined) => void;
+  owners: Owner[];
+  onApplySplit: (id: string, splitsData: Split[] | undefined) => void;
 }
 
 interface SplitEntry {
   id: string;
-  with: string;
+  with_owner_id: string;
   percentage: number;
   amount: number;
 }
@@ -22,7 +22,7 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
 
   const availableOwners = useMemo(() => {
     if (!transaction) return [];
-    return owners.filter(o => o !== transaction.owner);
+    return owners.filter(o => o.id !== transaction.owner_id);
   }, [transaction, owners]);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
         if (availableOwners.length > 0) {
           setSplits([{
             id: 'split-0',
-            with: availableOwners[0],
+            with_owner_id: availableOwners[0].id,
             percentage: 50,
             amount: transaction.amount * 0.5
           }]);
@@ -48,9 +48,8 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
   if (!isOpen || !transaction) return null;
 
   const totalSplitPercentage = splits.reduce((acc, s) => acc + s.percentage, 0);
-  const totalSplitAmount = splits.reduce((acc, s) => acc + s.amount, 0);
   const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
-  const originalOwnerAmount = Math.max(0, transaction.amount - totalSplitAmount);
+  const originalOwnerAmount = (transaction.amount * originalOwnerPercentage) / 100;
 
   const isInvalid = totalSplitPercentage > 100;
 
@@ -60,12 +59,12 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
     const newAmount = transaction.amount * (newPercentage / 100);
     
     // Find an owner that is not already in the splits if possible
-    const usedOwners = new Set(splits.map(s => s.with));
-    const nextOwner = availableOwners.find(o => !usedOwners.has(o)) || availableOwners[0];
+    const usedOwnerIds = new Set(splits.map(s => s.with_owner_id));
+    const nextOwner = availableOwners.find(o => !usedOwnerIds.has(o.id)) || availableOwners[0];
 
     setSplits([...splits, {
       id: `split-${Date.now()}`,
-      with: nextOwner,
+      with_owner_id: nextOwner.id,
       percentage: newPercentage,
       amount: newAmount
     }]);
@@ -75,7 +74,7 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
     setSplits(splits.filter(s => s.id !== id));
   };
 
-  const handleUpdateSplit = (id: string, field: 'with' | 'percentage' | 'amount', value: string | number) => {
+  const handleUpdateSplit = (id: string, field: 'with_owner_id' | 'percentage' | 'amount', value: string | number) => {
     setSplits(splits.map(s => {
       if (s.id !== id) return s;
 
@@ -99,8 +98,8 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
     if (splits.length === 0) {
       onApplySplit(transaction.id, undefined);
     } else {
-      const cleanSplits = splits.map(({ with: w, percentage, amount }) => ({
-        with: w,
+      const cleanSplits = splits.map(({ with_owner_id, percentage, amount }) => ({
+        with_owner_id,
         percentage: Number(percentage.toFixed(2)),
         amount: Number(amount.toFixed(2))
       }));
@@ -131,6 +130,9 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
     setSplits(newSplits);
   };
 
+  // Helper para mostrar o nome do owner original
+  const originalOwnerName = owners.find(o => o.id === transaction.owner_id)?.name || transaction.owner_id;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
@@ -158,7 +160,7 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
             </div>
             
             <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-700">Parte de {transaction.owner} (Pagador):</span>
+              <span className="text-sm font-medium text-gray-700">Parte de {originalOwnerName} (Pagador):</span>
               <div className="text-right">
                 <span className={`text-sm font-bold ${isInvalid ? 'text-red-600' : 'text-purple-600'}`}>
                   {originalOwnerPercentage.toFixed(1)}%
@@ -208,11 +210,11 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
                     <div key={split.id} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
                       <div className="flex-1">
                         <select
-                          value={split.with}
-                          onChange={(e) => handleUpdateSplit(split.id, 'with', e.target.value)}
+                          value={split.with_owner_id}
+                          onChange={(e) => handleUpdateSplit(split.id, 'with_owner_id', e.target.value)}
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none bg-gray-50"
                         >
-                          {availableOwners.map((o) => <option key={o} value={o}>{o}</option>)}
+                          {availableOwners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                         </select>
                       </div>
                       <div className="w-24 relative">

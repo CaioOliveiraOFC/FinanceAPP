@@ -1,20 +1,24 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import { UploadCloud, X, Check, AlertCircle, FileText } from 'lucide-react';
-import { Transaction } from '../types';
+import { Transaction, Category, Owner } from '../types';
 import { generateTransactionId } from '../utils/hash';
 import { parseTransactionTitle } from '../utils/parser';
 
 interface CSVUploaderProps {
   onImport: (transactions: Transaction[]) => void;
-  defaultCategory?: string;
-  defaultOwner?: string;
+  defaultCategory: Category;
+  defaultOwner: Owner;
+  categories: Category[];
+  owners: Owner[];
 }
 
 export default function CSVUploader({
   onImport,
-  defaultCategory = 'Outros',
-  defaultOwner = 'Caio',
+  defaultCategory,
+  defaultOwner,
+  categories,
+  owners,
 }: CSVUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [parsedTransactions, setParsedTransactions] = useState<Transaction[]>([]);
@@ -57,10 +61,8 @@ export default function CSVUploader({
               throw new Error(`Valor inválido na linha ${index + 2}.`);
             }
 
-            // Regra 1: Ignorar créditos (amount < 0)
-            if (amount < 0) {
-              return acc;
-            }
+            const type = amount > 0 ? 'expense' : 'income';
+            const finalAmount = Math.abs(amount);
 
             // Regra 2: Ignorar por título ("Estorno" ou "Pagamento recebido")
             const lowerTitle = rawTitle.toLowerCase();
@@ -76,13 +78,17 @@ export default function CSVUploader({
             const { cleanTitle, installment } = parseTransactionTitle(rawTitle);
 
             acc.push({
-              id: generateTransactionId(date, rawTitle, amount), // Usa o rawTitle para o hash manter a unicidade
+              id: generateTransactionId(date, rawTitle, finalAmount), // Usa o rawTitle para o hash manter a unicidade
+              month_year: date.substring(0, 7),
               date,
               title: cleanTitle,
-              amount,
-              category: defaultCategory,
-              owner: defaultOwner,
+              amount: finalAmount,
+              type,
+              status: 'paid', // Assumimos que o que vem do extrato (CSV) já foi pago
+              category_id: defaultCategory.id,
+              owner_id: defaultOwner.id,
               installment,
+              splits: null,
             });
 
             return acc;
@@ -217,8 +223,8 @@ export default function CSVUploader({
                             </span>
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-right font-medium ${t.amount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {t.amount > 0 ? '-' : '+'}{Math.abs(t.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        <td className={`px-4 py-3 text-right font-medium ${t.type === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {t.type === 'expense' ? '-' : '+'}{t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </td>
                       </tr>
                     ))}

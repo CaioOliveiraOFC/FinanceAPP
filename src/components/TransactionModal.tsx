@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
-import { Transaction } from '../types';
+import { Transaction, Category, Owner } from '../types';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (transaction: Omit<Transaction, 'id'> | Transaction) => void;
   initialData?: Transaction;
-  categories: string[];
-  owners: string[];
+  categories: Category[];
+  owners: Owner[];
 }
 
 export default function TransactionModal({
@@ -23,8 +23,8 @@ export default function TransactionModal({
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'expense' | 'income'>('expense');
-  const [category, setCategory] = useState(categories[0] || '');
-  const [owner, setOwner] = useState(owners[0] || '');
+  const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
+  const [ownerId, setOwnerId] = useState(owners[0]?.id || '');
 
   // Campos de Parcela (Opcional)
   const [hasInstallment, setHasInstallment] = useState(false);
@@ -36,10 +36,10 @@ export default function TransactionModal({
       if (initialData) {
         setDate(initialData.date);
         setTitle(initialData.title);
-        setAmount(Math.abs(initialData.amount).toString());
-        setType(initialData.amount > 0 ? 'expense' : 'income');
-        setCategory(initialData.category);
-        setOwner(initialData.owner);
+        setAmount(initialData.amount.toString());
+        setType(initialData.type);
+        setCategoryId(initialData.category_id);
+        setOwnerId(initialData.owner_id);
         
         if (initialData.installment) {
           setHasInstallment(true);
@@ -56,8 +56,8 @@ export default function TransactionModal({
         setTitle('');
         setAmount('');
         setType('expense');
-        setCategory(categories[0] || '');
-        setOwner(owners[0] || '');
+        setCategoryId(categories[0]?.id || '');
+        setOwnerId(owners[0]?.id || '');
         setHasInstallment(false);
         setCurrentInst('');
         setTotalInst('');
@@ -76,22 +76,23 @@ export default function TransactionModal({
       return;
     }
 
-    const finalAmount = type === 'expense' ? numAmount : -numAmount;
-
-    const transactionData: any = {
+    const transactionData: Omit<Transaction, 'id'> = {
+      month_year: date.substring(0, 7),
       date,
       title: title.trim(),
-      amount: finalAmount,
-      category,
-      owner,
+      amount: numAmount,
+      type,
+      status: 'paid', // Default para novas transações
+      category_id: categoryId,
+      owner_id: ownerId,
+      splits: null,
+      installment: (hasInstallment && currentInst && totalInst)
+        ? {
+            current: parseInt(currentInst, 10),
+            total: parseInt(totalInst, 10),
+          }
+        : null,
     };
-
-    if (hasInstallment && currentInst && totalInst) {
-      transactionData.installment = {
-        current: parseInt(currentInst, 10),
-        total: parseInt(totalInst, 10),
-      };
-    }
 
     if (initialData) {
       // Modo Edição: preserva o ID e o split (se houver)
@@ -181,11 +182,11 @@ export default function TransactionModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
               >
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>
@@ -193,11 +194,11 @@ export default function TransactionModal({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Responsável</label>
             <select
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
             >
-              {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           </div>
 

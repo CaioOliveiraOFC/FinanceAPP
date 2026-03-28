@@ -1,16 +1,14 @@
-import React, { useState, useRef } from 'react';
-import { AppData } from '../types';
-import { Trash2, Plus, Download, Upload, AlertTriangle, Edit2, Check, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Category, Owner } from '../types';
+import { Trash2, Plus, Edit2, Check, X } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 interface SettingsProps {
-  data: AppData;
-  updateData: (newData: Partial<AppData>) => void;
-  exportBackup: () => void;
-  importBackup: (json: string) => boolean;
-  resetData: () => void;
+  categories: Category[];
+  owners: Owner[];
 }
 
-export default function Settings({ data, updateData, exportBackup, importBackup, resetData }: SettingsProps) {
+export default function Settings({ categories, owners }: SettingsProps) {
   const [newCat, setNewCat] = useState('');
   const [newOwner, setNewOwner] = useState('');
   
@@ -20,122 +18,89 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
   const [editingOwner, setEditingOwner] = useState<string | null>(null);
   const [editOwnerValue, setEditOwnerValue] = useState('');
 
-  const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState<string | null>(null);
   const [confirmDeleteOwner, setConfirmDeleteOwner] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const addCategory = () => {
-    if (newCat.trim() && !data.categories.includes(newCat.trim())) {
-      updateData({ categories: [...data.categories, newCat.trim()] });
+  const addCategory = async () => {
+    if (newCat.trim() && !categories.find(c => c.name === newCat.trim())) {
+      await supabase.from('categories').insert({ id: `cat_${Date.now()}`, name: newCat.trim() });
       setNewCat('');
+      window.location.reload();
     }
   };
 
-  const removeCategory = (cat: string) => {
-    const count = data.transactions.filter(t => t.category === cat).length;
-    if (count > 0 && confirmDeleteCategory !== cat) {
-      setConfirmDeleteCategory(cat);
+  const removeCategory = async (cat: Category) => {
+    if (confirmDeleteCategory !== cat.id) {
+      setConfirmDeleteCategory(cat.id);
       return;
     }
-    updateData({ categories: data.categories.filter(c => c !== cat) });
+    await supabase.from('categories').delete().eq('id', cat.id);
     setConfirmDeleteCategory(null);
+    window.location.reload();
   };
 
-  const startEditCategory = (cat: string) => {
-    setEditingCat(cat);
-    setEditCatValue(cat);
+  const startEditCategory = (cat: Category) => {
+    setEditingCat(cat.id);
+    setEditCatValue(cat.name);
   };
 
-  const saveEditCategory = (oldCat: string) => {
-    const newCat = editCatValue.trim();
-    if (!newCat || newCat === oldCat) {
+  const saveEditCategory = async (cat: Category) => {
+    const newName = editCatValue.trim();
+    if (!newName || newName === cat.name) {
       setEditingCat(null);
       return;
     }
-    if (data.categories.includes(newCat)) {
+    if (categories.find(c => c.name === newName)) {
       alert('Categoria já existe!');
       return;
     }
     
-    const newCategories = data.categories.map(c => c === oldCat ? newCat : c);
-    const newTransactions = data.transactions.map(t => 
-      t.category === oldCat ? { ...t, category: newCat } : t
-    );
-    
-    updateData({ categories: newCategories, transactions: newTransactions });
+    await supabase.from('categories').update({ name: newName }).eq('id', cat.id);
     setEditingCat(null);
+    window.location.reload();
   };
 
-  const addOwner = () => {
-    if (newOwner.trim() && !data.owners.includes(newOwner.trim())) {
-      updateData({ owners: [...data.owners, newOwner.trim()] });
+  const addOwner = async () => {
+    if (newOwner.trim() && !owners.find(o => o.name === newOwner.trim())) {
+      await supabase.from('owners').insert({ id: `owner_${Date.now()}`, name: newOwner.trim(), color: '#6366f1' });
       setNewOwner('');
+      window.location.reload();
     }
   };
 
-  const removeOwner = (owner: string) => {
-    const count = data.transactions.filter(t => t.owner === owner || t.splits?.some(s => s.with === owner)).length;
-    if (count > 0 && confirmDeleteOwner !== owner) {
-      setConfirmDeleteOwner(owner);
+  const removeOwner = async (owner: Owner) => {
+    if (confirmDeleteOwner !== owner.id) {
+      setConfirmDeleteOwner(owner.id);
       return;
     }
-    updateData({ owners: data.owners.filter(o => o !== owner) });
+    await supabase.from('owners').delete().eq('id', owner.id);
     setConfirmDeleteOwner(null);
+    window.location.reload();
   };
 
-  const startEditOwner = (owner: string) => {
-    setEditingOwner(owner);
-    setEditOwnerValue(owner);
+  const startEditOwner = (owner: Owner) => {
+    setEditingOwner(owner.id);
+    setEditOwnerValue(owner.name);
   };
 
-  const saveEditOwner = (oldOwner: string) => {
-    const newOwner = editOwnerValue.trim();
-    if (!newOwner || newOwner === oldOwner) {
+  const saveEditOwner = async (owner: Owner) => {
+    const newName = editOwnerValue.trim();
+    if (!newName || newName === owner.name) {
       setEditingOwner(null);
       return;
     }
-    if (data.owners.includes(newOwner)) {
+    if (owners.find(o => o.name === newName)) {
       alert('Responsável já existe!');
       return;
     }
     
-    const newOwners = data.owners.map(o => o === oldOwner ? newOwner : o);
-    const newTransactions = data.transactions.map(t => {
-      let updated = { ...t };
-      if (updated.owner === oldOwner) updated.owner = newOwner;
-      if (updated.splits) {
-        updated.splits = updated.splits.map(s => s.with === oldOwner ? { ...s, with: newOwner } : s);
-      }
-      return updated;
-    });
-    
-    updateData({ owners: newOwners, transactions: newTransactions });
+    await supabase.from('owners').update({ name: newName }).eq('id', owner.id);
     setEditingOwner(null);
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const success = importBackup(content);
-      if (success) {
-        alert('Backup importado com sucesso!');
-      } else {
-        alert('Falha ao importar backup. Arquivo inválido.');
-      }
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-    reader.readAsText(file);
+    window.location.reload();
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Categorias */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
@@ -154,16 +119,14 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
             </button>
           </div>
           <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {data.categories.map(cat => {
-              const count = data.transactions.filter(t => t.category === cat).length;
-              const isEditing = editingCat === cat;
+            {categories.map(cat => {
+              const isEditing = editingCat === cat.id;
 
               return (
-                <li key={cat} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
-                  {confirmDeleteCategory === cat ? (
+                <li key={cat.id} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {confirmDeleteCategory === cat.id ? (
                     <div className="flex flex-col space-y-2 w-full">
-                      <span className="text-sm text-red-600 font-medium">Excluir "{cat}"?</span>
-                      <span className="text-xs text-gray-500">Usada em {count} transações.</span>
+                      <span className="text-sm text-red-600 font-medium">Excluir "{cat.name}"?</span>
                       <div className="flex gap-2 mt-1">
                         <button onClick={() => removeCategory(cat)} className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">Confirmar</button>
                         <button onClick={() => setConfirmDeleteCategory(null)} className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">Cancelar</button>
@@ -184,8 +147,7 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
                         </div>
                       ) : (
                         <div className="flex flex-col">
-                          <span className="text-gray-700 font-medium">{cat}</span>
-                          {count > 0 && <span className="text-xs text-gray-400">{count} transação(ões)</span>}
+                          <span className="text-gray-700 font-medium">{cat.name}</span>
                         </div>
                       )}
                       
@@ -235,16 +197,14 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
             </button>
           </div>
           <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {data.owners.map(owner => {
-              const count = data.transactions.filter(t => t.owner === owner || t.splits?.some(s => s.with === owner)).length;
-              const isEditing = editingOwner === owner;
+            {owners.map(owner => {
+              const isEditing = editingOwner === owner.id;
 
               return (
-                <li key={owner} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
-                  {confirmDeleteOwner === owner ? (
+                <li key={owner.id} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {confirmDeleteOwner === owner.id ? (
                     <div className="flex flex-col space-y-2 w-full">
-                      <span className="text-sm text-red-600 font-medium">Excluir "{owner}"?</span>
-                      <span className="text-xs text-gray-500">Vinculado a {count} transações.</span>
+                      <span className="text-sm text-red-600 font-medium">Excluir "{owner.name}"?</span>
                       <div className="flex gap-2 mt-1">
                         <button onClick={() => removeOwner(owner)} className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">Confirmar</button>
                         <button onClick={() => setConfirmDeleteOwner(null)} className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">Cancelar</button>
@@ -265,8 +225,7 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
                         </div>
                       ) : (
                         <div className="flex flex-col">
-                          <span className="text-gray-700 font-medium">{owner}</span>
-                          {count > 0 && <span className="text-xs text-gray-400">{count} vínculo(s)</span>}
+                          <span className="text-gray-700 font-medium">{owner.name}</span>
                         </div>
                       )}
                       
@@ -299,61 +258,6 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
           </ul>
         </div>
       </div>
-
-      {/* Backup e Reset */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Backup e Restauração</h3>
-          <p className="text-sm text-gray-500 mb-4">Exporte seus dados para um arquivo JSON ou importe um backup existente.</p>
-          <div className="flex flex-wrap gap-4">
-            <button onClick={exportBackup} className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
-              <Download className="w-4 h-4 mr-2" /> Exportar JSON
-            </button>
-            <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
-              <Upload className="w-4 h-4 mr-2" /> Importar JSON
-            </button>
-            <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={handleImport} />
-          </div>
-        </div>
-
-        <div className="pt-6 border-t border-gray-100">
-          <h3 className="text-lg font-semibold text-red-600 mb-2 flex items-center">
-            <AlertTriangle className="w-5 h-5 mr-2" /> Danger Zone
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">Esta ação apagará permanentemente todos os seus dados locais. Não pode ser desfeita.</p>
-          
-          {!confirmReset ? (
-            <button 
-              onClick={() => setConfirmReset(true)} 
-              className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-medium transition-colors"
-            >
-              Apagar todos os dados
-            </button>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <span className="text-sm text-red-800 font-medium">Tem certeza absoluta?</span>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => {
-                    resetData();
-                    setConfirmReset(false);
-                  }} 
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors"
-                >
-                  Sim, apagar tudo
-                </button>
-                <button 
-                  onClick={() => setConfirmReset(false)} 
-                  className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
     </div>
   );
 }

@@ -14,8 +14,12 @@ export default function TransactionDetailsModal({ isOpen, onClose, transaction }
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-  const totalSplitAmount = transaction.splits?.reduce((acc, s) => acc + s.amount, 0) || 0;
-  const originalOwnerAmount = Math.max(0, transaction.amount - totalSplitAmount);
+  const totalSplitPercentage = Math.min(
+    100,
+    transaction.splits?.reduce((acc, s) => acc + s.percentage, 0) || 0
+  );
+  const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
+  const originalOwnerAmount = (transaction.amount * originalOwnerPercentage) / 100;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -68,12 +72,15 @@ export default function TransactionDetailsModal({ isOpen, onClose, transaction }
                   <span className="text-purple-800 font-medium">{transaction.owner} (Pagador)</span>
                   <span className="font-bold text-purple-900">{formatCurrency(originalOwnerAmount)}</span>
                 </li>
-                {transaction.splits.map((split, idx) => (
-                  <li key={idx} className="flex justify-between items-center text-sm">
-                    <span className="text-purple-700">{split.with}</span>
-                    <span className="font-semibold text-purple-800">{formatCurrency(split.amount)}</span>
-                  </li>
-                ))}
+                {transaction.splits.map((split, idx) => {
+                  const splitAmount = (transaction.amount * split.percentage) / 100;
+                  return (
+                    <li key={idx} className="flex justify-between items-center text-sm">
+                      <span className="text-purple-700">{split.with}</span>
+                      <span className="font-semibold text-purple-800">{formatCurrency(splitAmount)}</span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

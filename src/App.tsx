@@ -1,7 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { useStorage } from './hooks/useStorage';
+import React, { useState, useEffect } from 'react';
+import useSupabase from './hooks/useSupabase';
 import { useTransactions } from './hooks/useTransactions';
-import { useHistory } from './hooks/useHistory';
 import Dashboard from './components/Dashboard';
 import TransactionTable from './components/TransactionTable';
 import CSVUploader from './components/CSVUploader';
@@ -9,46 +8,21 @@ import Settings from './components/Settings';
 import TransactionModal from './components/TransactionModal';
 import SplitModal from './components/SplitModal';
 import { formatPeriod } from './utils/date';
-import { LayoutDashboard, Settings as SettingsIcon, Wallet, Plus, FileSpreadsheet, Undo2, Redo2 } from 'lucide-react';
-import { Transaction, AppData } from './types';
+import { LayoutDashboard, Settings as SettingsIcon, Wallet, Plus, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Transaction, Owner, Category, MonthlyBudget, CategoryBudget } from './types';
 
 type Tab = 'finance' | 'project';
 
 export default function App() {
-  const { data, updateData, exportBackup, importBackup, resetData, isLoaded } = useStorage();
-  const { pushState, undo, redo, canUndo, canRedo } = useHistory();
-
-  const handleUpdateData = useCallback((newData: Partial<AppData>) => {
-    pushState(data);
-    updateData(newData);
-  }, [data, pushState, updateData]);
-
-  const handleUndo = () => {
-    undo(data, updateData);
-  };
-
-  const handleRedo = () => {
-    redo(data, updateData);
-  };
-
-  const handleResetData = useCallback(() => {
-    pushState(data);
-    localStorage.removeItem('finance_app_data');
-    updateData({ transactions: [], categories: ['Alimentação', 'Transporte', 'Moradia', 'Lazer', 'Saúde', 'Outros'], owners: ['Caio', 'Família'] });
-  }, [data, pushState, updateData]);
-
-  const handleImportBackup = useCallback((json: string) => {
-    pushState(data);
-    const success = importBackup(json);
-    if (!success) {
-      // If import failed, we might want to pop the state, but our hook doesn't have pop.
-      // For now, it's okay.
-    }
-    return success;
-  }, [data, pushState, importBackup]);
-
-  const txHooks = useTransactions(data, handleUpdateData);
+  const supabase = useSupabase();
+  const txHooks = useTransactions();
   
+  const [owners, setOwners] = useState<Owner[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [monthlyBudget, setMonthlyBudget] = useState<MonthlyBudget | null>(null);
+  const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
+  const [isAppLoading, setIsAppLoading] = useState(true);
+
   const [activeTab, setActiveTab] = useState<Tab>('finance');
   
   // Modal States
@@ -57,11 +31,48 @@ export default function App() {
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [splittingTx, setSplittingTx] = useState<Transaction | null>(null);
 
-  if (!isLoaded) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">Carregando...</div>;
+  // 1. Initial Load & Month Change
+  useEffect(() => {
+    const loadBaseData = async () => {
+      setIsAppLoading(true);
+      try {
+        // Se o txHooks.filterMonth ainda não estiver definido, usamos o mês atual como fallback
+        const currentMonth = txHooks.filterMonth || new Date().toISOString().substring(0, 7);
+        
+        const [fetchedOwners, fetchedCategories, fetchedMB, fetchedCB] = await Promise.all([
+          supabase.fetchOwners(),
+          supabase.fetchCategories(),
+          supabase.fetchMonthlyBudget(currentMonth),
+          supabase.fetchCategoryBudgets(currentMonth)
+        ]);
+
+        setOwners(fetchedOwners);
+        setCategories(fetchedCategories);
+        setMonthlyBudget(fetchedMB);
+        setCategoryBudgets(fetchedCB);
+      } catch (error) {
+        console.error("Error loading base data:", error);
+      } finally {
+        setIsAppLoading(false);
+      }
+    };
+
+    // Só carrega se tivermos um mês definido (o useTransactions define o inicial no mount)
+    if (txHooks.filterMonth) {
+      loadBaseData();
+    }
+  }, [txHooks.filterMonth]);
+
+  if (isAppLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+        <p className="text-gray-500 font-medium">Carregando dados do Supabase...</p>
+      </div>
+    );
   }
 
-  const hasData = data.transactions.length > 0;
+  const hasData = txHooks.filteredTransactions.length > 0;
 
   const handleOpenNewTx = () => {
     setEditingTx(undefined);
@@ -80,13 +91,12 @@ export default function App() {
 
   const handleSaveTx = (txData: Omit<Transaction, 'id'> | Transaction) => {
     if ('id' in txData) {
-      // Modo Edição (o ID já existe)
-      const { id, ...updates } = txData;
+      const { id, ...updates } = txData as Transaction;
       txHooks.updateTransaction(id, updates);
     } else {
-      // Modo Criação
-      txHooks.addTransaction(txData);
+      txHooks.addTransaction(txData as Omit<Transaction, 'id'>);
     }
+    setIsTxModalOpen(false);
   };
 
   return (
@@ -98,30 +108,9 @@ export default function App() {
             <div className="flex items-center">
               <Wallet className="w-8 h-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-bold text-gray-900 tracking-tight mr-6">FinanceApp</h1>
-              
-              {/* Undo / Redo Buttons */}
-              <div className="flex items-center space-x-1 border-l border-gray-200 pl-6">
-                <button
-                  onClick={handleUndo}
-                  disabled={!canUndo}
-                  className={`p-2 rounded-lg transition-colors ${
-                    canUndo ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
-                  }`}
-                  title="Desfazer"
-                >
-                  <Undo2 className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleRedo}
-                  disabled={!canRedo}
-                  className={`p-2 rounded-lg transition-colors ${
-                    canRedo ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
-                  }`}
-                  title="Refazer"
-                >
-                  <Redo2 className="w-5 h-5" />
-                </button>
-              </div>
+              {txHooks.isLoading && (
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin ml-2" />
+              )}
             </div>
             <nav className="flex space-x-2 items-center">
               <button
@@ -140,7 +129,7 @@ export default function App() {
                 }`}
               >
                 <SettingsIcon className="w-4 h-4 mr-2" />
-                Gerenciar Projeto
+                Configurações
               </button>
             </nav>
           </div>
@@ -149,7 +138,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {!hasData && activeTab === 'finance' ? (
+        {!hasData && activeTab === 'finance' && !txHooks.isLoading ? (
           <div className="max-w-2xl mx-auto mt-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200">
               <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -157,7 +146,7 @@ export default function App() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Bem-vindo ao FinanceApp</h2>
               <p className="text-gray-600 mb-8">
-                Parece que você ainda não tem nenhuma transação. Comece importando sua fatura do Nubank (CSV) ou crie uma transação manualmente.
+                Parece que você ainda não tem nenhuma transação neste mês. Comece importando sua fatura do Nubank (CSV) ou crie uma transação manualmente.
               </p>
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
@@ -182,8 +171,10 @@ export default function App() {
               <div className="mt-8">
                 <CSVUploader 
                   onImport={txHooks.importTransactions} 
-                  defaultCategory={data.categories[0]}
-                  defaultOwner={data.owners[0]}
+                  defaultCategory={categories[0]}
+                  defaultOwner={owners[0]}
+                  categories={categories}
+                  owners={owners}
                 />
               </div>
             </div>
@@ -206,14 +197,18 @@ export default function App() {
                         onChange={(e) => txHooks.setFilterMonth(e.target.value)}
                         className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
                       >
-                        <option value="">Todo o Período</option>
                         {txHooks.availableMonths.map((m) => (
                           <option key={m} value={m}>{formatPeriod(m)}</option>
                         ))}
                       </select>
                     </div>
                   </div>
-                  <Dashboard transactions={txHooks.filteredTransactions} />
+                  <Dashboard 
+                    transactions={txHooks.filteredTransactions} 
+                    monthlyBudget={monthlyBudget}
+                    categoryBudgets={categoryBudgets}
+                    owners={owners}
+                  />
                 </section>
 
                 {/* Transactions Section */}
@@ -234,8 +229,8 @@ export default function App() {
                   <div className="h-[600px] flex flex-col">
                     <TransactionTable
                       transactions={txHooks.filteredTransactions}
-                      categories={data.categories}
-                      owners={data.owners}
+                      categories={categories}
+                      owners={owners}
                       onUpdate={txHooks.updateTransaction}
                       onBatchUpdate={txHooks.batchUpdate}
                       onDelete={txHooks.deleteTransactions}
@@ -262,27 +257,26 @@ export default function App() {
                   </h3>
                   <CSVUploader 
                     onImport={txHooks.importTransactions} 
-                    defaultCategory={data.categories[0]}
-                    defaultOwner={data.owners[0]}
+                    defaultCategory={categories[0]}
+                    defaultOwner={owners[0]}
+                    categories={categories}
+                    owners={owners}
                   />
                 </section>
 
               </div>
             )}
 
-            {/* ABA: GERENCIAR PROJETO */}
+            {/* ABA: CONFIGURAÇÕES */}
             {activeTab === 'project' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">Gerenciar Projeto</h2>
-                  <p className="text-gray-500 text-sm mb-6">Configure as categorias, responsáveis e gerencie seus backups locais.</p>
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">Configurações</h2>
+                  <p className="text-gray-500 text-sm mb-6">Gerencie as categorias e responsáveis do sistema.</p>
                 </div>
                 <Settings 
-                  data={data}
-                  updateData={handleUpdateData}
-                  exportBackup={exportBackup}
-                  importBackup={handleImportBackup}
-                  resetData={handleResetData}
+                  owners={owners}
+                  categories={categories}
                 />
               </div>
             )}
@@ -297,15 +291,15 @@ export default function App() {
         onClose={() => setIsTxModalOpen(false)}
         onSave={handleSaveTx}
         initialData={editingTx}
-        categories={data.categories}
-        owners={data.owners}
+        categories={categories}
+        owners={owners}
       />
 
       <SplitModal
         isOpen={isSplitModalOpen}
         onClose={() => setIsSplitModalOpen(false)}
         transaction={splittingTx}
-        owners={data.owners}
+        owners={owners}
         onApplySplit={txHooks.applySplit}
       />
 

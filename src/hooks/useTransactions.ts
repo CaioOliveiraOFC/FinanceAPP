@@ -1,113 +1,228 @@
-import { useState, useMemo, useCallback } from 'react';
-import { Transaction, AppData } from '../types';
-import { generateTransactionId } from '../utils/hash';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { Transaction, TransactionWithRefs, Split } from '../types';
 import { generateInstallments } from '../utils/installments';
+import { parseTransactionTitle } from '../utils/parser';
+import useSupabase from './useSupabase';
 
-export function useTransactions(
-  data: AppData,
-  updateData: (newData: Partial<AppData>) => void
-) {
+export function useTransactions() {
+  const supabase = useSupabase();
+  
+  // Estado local (cache)
+  const [transactions, setTransactions] = useState<TransactionWithRefs[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Estado dos filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMonth, setFilterMonth] = useState(''); // Formato YYYY-MM
   const [filterCategory, setFilterCategory] = useState('');
   const [filterOwner, setFilterOwner] = useState('');
 
+  // Função centralizada para buscar dados do Supabase
+  const isFetching = useRef(false);
+
+  const fetchData = useCallback(async (month: string) => {
+    if (isFetching.current) return;
+    isFetching.current = true;
+    setIsLoading(true);
+    try {
+      const data = await supabase.fetchTransactions(month);
+      setTransactions(data);
+    } catch (error) {
+      console.error('Failed to load transactions:', error);
+    } finally {
+      setIsLoading(false);
+      isFetching.current = false;
+    }
+  }, [supabase]);
+
+  // Carrega transações quando o mês ativo muda
+  useEffect(() => {
+    if (filterMonth) {
+      fetchData(filterMonth);
+    }
+  }, [filterMonth]); // Remova fetchData das dependências
+
   // 1. Lógica de Importação (Deduplicação)
   const importTransactions = useCallback(
-    (newTransactions: Transaction[]) => {
-      const expandedTransactions = newTransactions.flatMap(generateInstallments);
-      const existingIds = new Set(data.transactions.map((t) => t.id));
-      const uniqueNewTransactions = expandedTransactions.filter((t) => !existingIds.has(t.id));
-
-      if (uniqueNewTransactions.length > 0) {
-        updateData({
-          transactions: [...data.transactions, ...uniqueNewTransactions].sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          ),
-        });
+    async (newTransactions: Transaction[]) => {
+      setIsLoading(true);
+      try {
+        const expandedTransactions = newTransactions.flatMap(generateInstallments);
+        
+        if (expandedTransactions.length > 0) {
+          await supabase.addTransactions(expandedTransactions);
+          
+          // Se importou algo do mês atual, refaz o fetch para sincronizar IDs e Refs
+          if (expandedTransactions.some(t => t.month_year === filterMonth)) {
+            await fetchData(filterMonth);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to import transactions:', error);
+        alert('Erro ao importar transações.');
+      } finally {
+        setIsLoading(false);
       }
     },
-    [data.transactions, updateData]
+    [filterMonth, supabase, fetchData]
   );
 
   // 2. Lógica de Atualização (Inline e Batch)
   const addTransaction = useCallback(
-    (transaction: Omit<Transaction, 'id'>) => {
+    async (transaction: Omit<Transaction, 'id'>) => {
+      // Para add, precisamos do ID gerado pelo banco ou gerar um temporário.
+      // Como o ID é string, podemos gerar um temporário.
+      const tempId = `temp_${Date.now()}`;
       const newTransaction: Transaction = {
         ...transaction,
-        id: generateTransactionId(transaction.date, transaction.title, transaction.amount),
+        id: tempId,
       };
       
       const expandedTransactions = generateInstallments(newTransaction);
       
-      updateData({
-        transactions: [...expandedTransactions, ...data.transactions].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        ),
+      // Optimistic update (apenas as do mês atual)
+      const currentMonthTxs = expandedTransactions.filter(t => t.month_year === filterMonth);
+      if (currentMonthTxs.length > 0) {
+        setTransactions(prev => [...prev, ...currentMonthTxs as TransactionWithRefs[]]);
+      }
+
+      // Background update
+      supabase.addTransactions(expandedTransactions).then(() => {
+        // Após inserir, fazemos fetch para pegar os IDs reais e as Refs (category, owner)
+        if (currentMonthTxs.length > 0) {
+          fetchData(filterMonth);
+        }
+      }).catch(error => {
+        console.error('Failed to add transaction:', error);
+        alert('Erro ao adicionar transação.');
+        // Reverte optimistic update
+        if (currentMonthTxs.length > 0) {
+          setTransactions(prev => prev.filter(t => !currentMonthTxs.map(ct => ct.id).includes(t.id)));
+        }
       });
     },
-    [data.transactions, updateData]
+    [filterMonth, supabase, fetchData]
   );
 
   const updateTransaction = useCallback(
     (id: string, updates: Partial<Transaction>) => {
-      updateData({
-        transactions: data.transactions.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      const originalTransaction = transactions.find(t => t.id === id);
+      if (!originalTransaction) return;
+
+      // Optimistic update
+      setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } as TransactionWithRefs : t));
+
+      // Background update
+      supabase.updateTransaction(id, updates).then(() => {
+        // Se mudou owner_id ou category_id, precisamos refetch para atualizar as refs (nomes/cores)
+        if (updates.category_id || updates.owner_id) {
+          fetchData(filterMonth);
+        }
+      }).catch(error => {
+        console.error('Failed to update transaction:', error);
+        alert('Erro ao atualizar transação.');
+        // Reverte optimistic update
+        setTransactions(prev => prev.map(t => t.id === id ? originalTransaction : t));
       });
     },
-    [data.transactions, updateData]
+    [transactions, filterMonth, supabase, fetchData]
   );
 
   const batchUpdate = useCallback(
     (ids: string[], updates: Partial<Transaction>) => {
-      const idSet = new Set(ids);
-      updateData({
-        transactions: data.transactions.map((t) => (idSet.has(t.id) ? { ...t, ...updates } : t)),
+      // Guarda estado anterior para possível rollback
+      const previousTransactions = [...transactions];
+
+      // Optimistic update
+      setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, ...updates } as TransactionWithRefs : t));
+
+      // Background update
+      Promise.all(ids.map(id => supabase.updateTransaction(id, updates))).then(() => {
+        if (updates.category_id || updates.owner_id) {
+          fetchData(filterMonth);
+        }
+      }).catch(error => {
+        console.error('Failed to batch update transactions:', error);
+        alert('Erro ao atualizar transações em lote.');
+        // Reverte optimistic update
+        setTransactions(previousTransactions);
       });
     },
-    [data.transactions, updateData]
+    [transactions, filterMonth, supabase, fetchData]
   );
 
   const deleteTransactions = useCallback(
     (ids: string[]) => {
-      const idSet = new Set(ids);
-      updateData({
-        transactions: data.transactions.filter((t) => !idSet.has(t.id)),
+      // Guarda estado anterior para possível rollback
+      const previousTransactions = [...transactions];
+
+      // Optimistic update
+      setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+
+      // Background update
+      supabase.deleteTransactions(ids).catch(error => {
+        console.error('Failed to delete transactions:', error);
+        alert('Erro ao excluir transações.');
+        // Reverte optimistic update
+        setTransactions(previousTransactions);
       });
     },
-    [data.transactions, updateData]
+    [transactions, supabase]
   );
 
   const applySplit = useCallback(
-    (id: string, splitsData: Array<{ with: string; percentage: number; amount: number }> | undefined) => {
-      updateData({
-        transactions: data.transactions.map((t) => 
-          t.id === id ? { ...t, splits: splitsData } : t
-        ),
+    (id: string, splitsData: Split[] | undefined) => {
+      const originalTransaction = transactions.find(t => t.id === id);
+      if (!originalTransaction) return;
+
+      // Optimistic update
+      setTransactions(prev => prev.map(t => t.id === id ? { ...t, splits: splitsData || null } : t));
+
+      // Background update
+      supabase.updateTransaction(id, { splits: splitsData || null }).catch(error => {
+        console.error('Failed to apply split:', error);
+        alert('Erro ao aplicar divisão.');
+        // Reverte optimistic update
+        setTransactions(prev => prev.map(t => t.id === id ? originalTransaction : t));
       });
     },
-    [data.transactions, updateData]
+    [transactions, supabase]
   );
 
   // 3. Lógica de Filtragem
   const filteredTransactions = useMemo(() => {
-    return data.transactions.filter((t) => {
+    return transactions.filter((t) => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchMonth = filterMonth ? t.date.startsWith(filterMonth) : true;
-      const matchCategory = filterCategory ? t.category === filterCategory : true;
-      const matchOwner = filterOwner ? t.owner === filterOwner : true;
+      const matchCategory = filterCategory ? t.category_id === filterCategory : true;
+      const matchOwner = filterOwner ? t.owner_id === filterOwner : true;
 
-      return matchSearch && matchMonth && matchCategory && matchOwner;
+      return matchSearch && matchCategory && matchOwner;
     });
-  }, [data.transactions, searchTerm, filterMonth, filterCategory, filterOwner]);
+  }, [transactions, searchTerm, filterCategory, filterOwner]);
 
   // Extrai meses únicos para o filtro (YYYY-MM)
   const availableMonths = useMemo(() => {
-    const months = new Set(data.transactions.map((t) => t.date.substring(0, 7)));
-    return Array.from(months).sort().reverse();
-  }, [data.transactions]);
+    const months = [];
+    const date = new Date();
+    for (let i = 0; i < 12; i++) {
+      const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      months.push(monthStr);
+      date.setMonth(date.getMonth() - 1);
+    }
+    return months;
+  }, []);
+
+  // Define o mês inicial se não estiver setado
+  useEffect(() => {
+    if (!filterMonth && availableMonths.length > 0) {
+      setFilterMonth(availableMonths[0]);
+    }
+  }, [filterMonth, availableMonths]);
 
   return {
+    // Estado de carregamento
+    isLoading,
+
     // Estado dos filtros
     searchTerm,
     setSearchTerm,
@@ -131,9 +246,9 @@ export function useTransactions(
     applySplit,
     
     // Histórico
-    undo: history.undo,
-    redo: history.redo,
-    canUndo: history.canUndo,
-    canRedo: history.canRedo,
+    undo: () => console.warn('Undo not implemented with Supabase yet'),
+    redo: () => console.warn('Redo not implemented with Supabase yet'),
+    canUndo: false,
+    canRedo: false,
   };
 }

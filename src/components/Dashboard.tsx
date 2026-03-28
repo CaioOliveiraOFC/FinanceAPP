@@ -1,13 +1,20 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Users } from 'lucide-react';
-import { Transaction } from '../types';
+import { TransactionWithRefs, MonthlyBudget, CategoryBudget, Owner } from '../types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-export default function Dashboard({ transactions }: { transactions: Transaction[] }) {
-  // Consideramos apenas despesas (amount > 0) para os gráficos de gastos
-  const expenses = useMemo(() => transactions.filter(t => t.amount > 0), [transactions]);
+interface DashboardProps {
+  transactions: TransactionWithRefs[];
+  monthlyBudget: MonthlyBudget | null;
+  categoryBudgets: CategoryBudget[];
+  owners: Owner[];
+}
+
+export default function Dashboard({ transactions, monthlyBudget, categoryBudgets, owners }: DashboardProps) {
+  // Consideramos apenas despesas (type === 'expense') para os gráficos de gastos
+  const expenses = useMemo(() => transactions.filter(t => t.type === 'expense'), [transactions]);
 
   // Total de despesas (soma bruta de todas as transações)
   const totalExpenses = useMemo(() => expenses.reduce((acc, t) => acc + t.amount, 0), [expenses]);
@@ -17,32 +24,42 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
     const map: Record<string, number> = {};
 
     expenses.forEach(t => {
+      const ownerName = t.owner?.name || 'Desconhecido';
+      
       if (t.splits && t.splits.length > 0) {
-        // Se tem splits, o owner original paga (Total - Soma dos Splits)
-        const totalSplitAmount = t.splits.reduce((acc, s) => acc + s.amount, 0);
-        const ownerShare = t.amount - totalSplitAmount;
-        map[t.owner] = (map[t.owner] || 0) + ownerShare;
+        const totalSplitPercentage = Math.min(
+          100,
+          t.splits.reduce((acc, s) => acc + s.percentage, 0)
+        );
+        const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
+        const ownerShare = (t.amount * originalOwnerPercentage) / 100;
+        
+        map[ownerName] = (map[ownerName] || 0) + ownerShare;
         
         // E as pessoas com quem dividiu pagam o valor do Split
         t.splits.forEach(s => {
-          map[s.with] = (map[s.with] || 0) + s.amount;
+          const splitOwner = owners.find(o => o.id === s.with_owner_id);
+          const splitOwnerName = splitOwner ? splitOwner.name : 'Desconhecido';
+          const splitAmount = (t.amount * s.percentage) / 100;
+          map[splitOwnerName] = (map[splitOwnerName] || 0) + splitAmount;
         });
       } else {
         // Sem split, o owner paga 100%
-        map[t.owner] = (map[t.owner] || 0) + t.amount;
+        map[ownerName] = (map[ownerName] || 0) + t.amount;
       }
     });
 
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [expenses]);
+  }, [expenses, owners]);
 
   // Gastos por Categoria (A categoria da transação original se mantém)
   const expensesByCategory = useMemo(() => {
     const map: Record<string, number> = {};
     expenses.forEach(t => {
-      map[t.category] = (map[t.category] || 0) + t.amount;
+      const catName = t.category?.name || 'Sem Categoria';
+      map[catName] = (map[catName] || 0) + t.amount;
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
@@ -146,9 +163,12 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sharedExpenses.map(tx => {
-              const totalSplitPercentage = tx.splits!.reduce((acc, s) => acc + s.percentage, 0);
+              const totalSplitPercentage = Math.min(
+                100,
+                tx.splits!.reduce((acc, s) => acc + s.percentage, 0)
+              );
               const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
-              const originalOwnerAmount = Math.max(0, tx.amount - tx.splits!.reduce((acc, s) => acc + s.amount, 0));
+              const originalOwnerAmount = (tx.amount * originalOwnerPercentage) / 100;
 
               return (
                 <div key={tx.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
@@ -158,21 +178,26 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
                   </div>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">{tx.owner} <span className="text-xs text-gray-400">(Pagador)</span></span>
+                      <span className="text-gray-600">{tx.owner?.name || 'Desconhecido'} <span className="text-xs text-gray-400">(Pagador)</span></span>
                       <div className="text-right">
                         <span className="font-medium text-gray-900">{originalOwnerPercentage.toFixed(1)}%</span>
                         <span className="text-gray-500 ml-2">({formatCurrency(originalOwnerAmount)})</span>
                       </div>
                     </div>
-                    {tx.splits!.map((s, i) => (
-                      <div key={i} className="flex justify-between items-center">
-                        <span className="text-gray-600">{s.with}</span>
-                        <div className="text-right">
-                          <span className="font-medium text-purple-600">{s.percentage.toFixed(1)}%</span>
-                          <span className="text-gray-500 ml-2">({formatCurrency(s.amount)})</span>
+                    {tx.splits!.map((s, i) => {
+                      const splitOwner = owners.find(o => o.id === s.with_owner_id);
+                      const splitOwnerName = splitOwner ? splitOwner.name : 'Desconhecido';
+                      const splitAmount = (tx.amount * s.percentage) / 100;
+                      return (
+                        <div key={i} className="flex justify-between items-center">
+                          <span className="text-gray-600">{splitOwnerName}</span>
+                          <div className="text-right">
+                            <span className="font-medium text-purple-600">{s.percentage.toFixed(1)}%</span>
+                            <span className="text-gray-500 ml-2">({formatCurrency(splitAmount)})</span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
