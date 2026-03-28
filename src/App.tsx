@@ -7,6 +7,7 @@ import CSVUploader from './components/CSVUploader';
 import Settings from './components/Settings';
 import TransactionModal from './components/TransactionModal';
 import SplitModal from './components/SplitModal';
+import { formatPeriod } from './utils/date';
 import { LayoutDashboard, Settings as SettingsIcon, Wallet, Plus, FileSpreadsheet } from 'lucide-react';
 import { Transaction } from './types';
 
@@ -151,7 +152,7 @@ export default function App() {
                       >
                         <option value="">Todo o Período</option>
                         {txHooks.availableMonths.map((m) => (
-                          <option key={m} value={m}>{m}</option>
+                          <option key={m} value={m}>{formatPeriod(m)}</option>
                         ))}
                       </select>
                     </div>

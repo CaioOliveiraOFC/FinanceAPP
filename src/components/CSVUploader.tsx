@@ -35,11 +35,11 @@ export default function CSVUploader({
       skipEmptyLines: true,
       complete: (results) => {
         try {
-          const transactions: Transaction[] = results.data.map((row: any, index) => {
+          const transactions: Transaction[] = results.data.reduce((acc: Transaction[], row: any, index) => {
             // Normaliza as chaves para minúsculo e remove espaços
-            const normalizedRow = Object.keys(row).reduce((acc, key) => {
-              acc[key.trim().toLowerCase()] = row[key];
-              return acc;
+            const normalizedRow = Object.keys(row).reduce((accKey, key) => {
+              accKey[key.trim().toLowerCase()] = row[key];
+              return accKey;
             }, {} as any);
 
             const date = normalizedRow.date;
@@ -57,9 +57,25 @@ export default function CSVUploader({
               throw new Error(`Valor inválido na linha ${index + 2}.`);
             }
 
+            // Regra 1: Ignorar créditos (amount < 0)
+            if (amount < 0) {
+              return acc;
+            }
+
+            // Regra 2: Ignorar por título ("Estorno" ou "Pagamento recebido")
+            const lowerTitle = rawTitle.toLowerCase();
+            if (lowerTitle.includes('estorno') || lowerTitle.includes('pagamento recebido')) {
+              return acc;
+            }
+
+            // Regra 3: Limite de data (date < "2026-01-01")
+            if (date < '2026-01-01') {
+              return acc;
+            }
+
             const { cleanTitle, installment } = parseTransactionTitle(rawTitle);
 
-            return {
+            acc.push({
               id: generateTransactionId(date, rawTitle, amount), // Usa o rawTitle para o hash manter a unicidade
               date,
               title: cleanTitle,
@@ -67,8 +83,10 @@ export default function CSVUploader({
               category: defaultCategory,
               owner: defaultOwner,
               installment,
-            };
-          });
+            });
+
+            return acc;
+          }, []);
 
           setParsedTransactions(transactions);
           setShowPreview(true);

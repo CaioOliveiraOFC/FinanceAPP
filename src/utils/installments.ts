@@ -2,6 +2,7 @@ import { Transaction } from '../types';
 
 export function generateInstallments(tx: Transaction): Transaction[] {
   if (!tx.installment || tx.installment.total <= 1) {
+    if (tx.date < '2026-01-01') return [];
     return [tx];
   }
 
@@ -22,6 +23,11 @@ export function generateInstallments(tx: Transaction): Transaction[] {
     const month = String(date.getUTCMonth() + 1).padStart(2, '0');
     const day = String(date.getUTCDate()).padStart(2, '0');
     const dateString = `${year}-${month}-${day}`;
+
+    // Regra 4: Parcelas retroativas (remover se date < "2026-01-01")
+    if (dateString < '2026-01-01') {
+      continue;
+    }
 
     // ID determinístico: hash(titulo_limpo + valor_parcela + indice_parcela)
     const rawString = `${cleanTitle}|${amount}|${i}`;

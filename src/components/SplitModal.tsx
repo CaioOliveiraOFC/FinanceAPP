@@ -114,6 +114,24 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
     onClose();
   };
 
+  const handleSplitEqually = () => {
+    if (availableOwners.length === 0) return;
+    
+    // Total people = original owner + all available owners
+    const totalPeople = availableOwners.length + 1;
+    const equalPercentage = 100 / totalPeople;
+    const equalAmount = transaction.amount / totalPeople;
+
+    const newSplits = availableOwners.map((owner, index) => ({
+      id: `split-${Date.now()}-${index}`,
+      with: owner,
+      percentage: equalPercentage,
+      amount: equalAmount
+    }));
+
+    setSplits(newSplits);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
@@ -164,14 +182,23 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h4 className="text-sm font-semibold text-gray-900">Divisões (Splits)</h4>
-                <button
-                  onClick={handleAddSplit}
-                  disabled={isInvalid || availableOwners.length === 0}
-                  className="text-sm text-purple-600 font-medium hover:text-purple-700 flex items-center disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Adicionar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSplitEqually}
+                    disabled={isInvalid || availableOwners.length === 0}
+                    className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center disabled:opacity-50"
+                  >
+                    Dividir Igualmente
+                  </button>
+                  <button
+                    onClick={handleAddSplit}
+                    disabled={isInvalid || availableOwners.length === 0}
+                    className="text-sm text-purple-600 font-medium hover:text-purple-700 flex items-center disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Adicionar
+                  </button>
+                </div>
               </div>
 
               {splits.length === 0 ? (

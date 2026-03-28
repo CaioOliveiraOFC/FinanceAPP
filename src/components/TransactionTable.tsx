@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Trash2, Edit3, CheckSquare, Square, Users, MoreHorizontal } from 'lucide-react';
 import { Transaction } from '../types';
+import { formatPeriod } from '../utils/date';
+import TransactionDetailsModal from './TransactionDetailsModal';
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -45,6 +47,9 @@ export default function TransactionTable({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchCategory, setBatchCategory] = useState('');
   const [batchOwner, setBatchOwner] = useState('');
+
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedTransactionForDetails, setSelectedTransactionForDetails] = useState<Transaction | null>(null);
 
   const toggleSelectAll = () => {
     if (selectedIds.size === transactions.length) {
@@ -95,6 +100,19 @@ export default function TransactionTable({
     return `${d}/${m}/${y}`;
   };
 
+  const handleRowClick = (t: Transaction, e: React.MouseEvent) => {
+    // Ignore clicks on buttons, inputs, or selects
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('select') || target.closest('input')) {
+      return;
+    }
+
+    if (t.installment || (t.splits && t.splits.length > 0)) {
+      setSelectedTransactionForDetails(t);
+      setDetailsModalOpen(true);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
       
@@ -122,7 +140,7 @@ export default function TransactionTable({
             >
               <option value="">Todos os Meses</option>
               {availableMonths.map((m) => (
-                <option key={m} value={m}>{m}</option>
+                <option key={m} value={m}>{formatPeriod(m)}</option>
               ))}
             </select>
 
@@ -229,10 +247,12 @@ export default function TransactionTable({
             ) : (
               transactions.map((t) => {
                 const isSelected = selectedIds.has(t.id);
+                const isClickable = t.installment || (t.splits && t.splits.length > 0);
                 return (
                   <tr 
                     key={t.id} 
-                    className={`group transition-colors ${isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}
+                    onClick={(e) => handleRowClick(t, e)}
+                    className={`group transition-colors ${isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50'} ${isClickable ? 'cursor-pointer' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <button onClick={() => toggleSelect(t.id)} className="text-gray-400 hover:text-blue-600 focus:outline-none">
@@ -315,6 +335,12 @@ export default function TransactionTable({
           </tbody>
         </table>
       </div>
+
+      <TransactionDetailsModal
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        transaction={selectedTransactionForDetails}
+      />
     </div>
   );
 }
