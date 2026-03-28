@@ -20,6 +20,10 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
   const [editingOwner, setEditingOwner] = useState<string | null>(null);
   const [editOwnerValue, setEditOwnerValue] = useState('');
 
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDeleteCategory, setConfirmDeleteCategory] = useState<string | null>(null);
+  const [confirmDeleteOwner, setConfirmDeleteOwner] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addCategory = () => {
@@ -31,12 +35,12 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
 
   const removeCategory = (cat: string) => {
     const count = data.transactions.filter(t => t.category === cat).length;
-    if (count > 0) {
-      if (!window.confirm(`Esta categoria está sendo usada em ${count} transações. Tem certeza que deseja excluí-la?`)) {
-        return;
-      }
+    if (count > 0 && confirmDeleteCategory !== cat) {
+      setConfirmDeleteCategory(cat);
+      return;
     }
     updateData({ categories: data.categories.filter(c => c !== cat) });
+    setConfirmDeleteCategory(null);
   };
 
   const startEditCategory = (cat: string) => {
@@ -73,12 +77,12 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
 
   const removeOwner = (owner: string) => {
     const count = data.transactions.filter(t => t.owner === owner || t.splits?.some(s => s.with === owner)).length;
-    if (count > 0) {
-      if (!window.confirm(`Este responsável está vinculado a ${count} transações/divisões. Tem certeza que deseja excluí-lo?`)) {
-        return;
-      }
+    if (count > 0 && confirmDeleteOwner !== owner) {
+      setConfirmDeleteOwner(owner);
+      return;
     }
     updateData({ owners: data.owners.filter(o => o !== owner) });
+    setConfirmDeleteOwner(null);
   };
 
   const startEditOwner = (owner: string) => {
@@ -155,46 +159,59 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
               const isEditing = editingCat === cat;
 
               return (
-                <li key={cat} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
-                  {isEditing ? (
-                    <div className="flex items-center flex-1 mr-2">
-                      <input
-                        type="text"
-                        value={editCatValue}
-                        onChange={e => setEditCatValue(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEditCategory(cat)}
-                        autoFocus
-                        className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                      />
+                <li key={cat} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {confirmDeleteCategory === cat ? (
+                    <div className="flex flex-col space-y-2 w-full">
+                      <span className="text-sm text-red-600 font-medium">Excluir "{cat}"?</span>
+                      <span className="text-xs text-gray-500">Usada em {count} transações.</span>
+                      <div className="flex gap-2 mt-1">
+                        <button onClick={() => removeCategory(cat)} className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">Confirmar</button>
+                        <button onClick={() => setConfirmDeleteCategory(null)} className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">Cancelar</button>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col">
-                      <span className="text-gray-700 font-medium">{cat}</span>
-                      {count > 0 && <span className="text-xs text-gray-400">{count} transação(ões)</span>}
+                    <div className="flex items-center justify-between w-full">
+                      {isEditing ? (
+                        <div className="flex items-center flex-1 mr-2">
+                          <input
+                            type="text"
+                            value={editCatValue}
+                            onChange={e => setEditCatValue(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && saveEditCategory(cat)}
+                            autoFocus
+                            className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="text-gray-700 font-medium">{cat}</span>
+                          {count > 0 && <span className="text-xs text-gray-400">{count} transação(ões)</span>}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center space-x-1">
+                        {isEditing ? (
+                          <>
+                            <button onClick={() => saveEditCategory(cat)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingCat(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => removeCategory(cat)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
-                  
-                  <div className="flex items-center space-x-1">
-                    {isEditing ? (
-                      <>
-                        <button onClick={() => saveEditCategory(cat)} className="p-1 text-green-600 hover:bg-green-50 rounded">
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setEditingCat(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => removeCategory(cat)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
                 </li>
               );
             })}
@@ -223,46 +240,59 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
               const isEditing = editingOwner === owner;
 
               return (
-                <li key={owner} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
-                  {isEditing ? (
-                    <div className="flex items-center flex-1 mr-2">
-                      <input
-                        type="text"
-                        value={editOwnerValue}
-                        onChange={e => setEditOwnerValue(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEditOwner(owner)}
-                        autoFocus
-                        className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                      />
+                <li key={owner} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {confirmDeleteOwner === owner ? (
+                    <div className="flex flex-col space-y-2 w-full">
+                      <span className="text-sm text-red-600 font-medium">Excluir "{owner}"?</span>
+                      <span className="text-xs text-gray-500">Vinculado a {count} transações.</span>
+                      <div className="flex gap-2 mt-1">
+                        <button onClick={() => removeOwner(owner)} className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">Confirmar</button>
+                        <button onClick={() => setConfirmDeleteOwner(null)} className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">Cancelar</button>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col">
-                      <span className="text-gray-700 font-medium">{owner}</span>
-                      {count > 0 && <span className="text-xs text-gray-400">{count} vínculo(s)</span>}
+                    <div className="flex items-center justify-between w-full">
+                      {isEditing ? (
+                        <div className="flex items-center flex-1 mr-2">
+                          <input
+                            type="text"
+                            value={editOwnerValue}
+                            onChange={e => setEditOwnerValue(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && saveEditOwner(owner)}
+                            autoFocus
+                            className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="text-gray-700 font-medium">{owner}</span>
+                          {count > 0 && <span className="text-xs text-gray-400">{count} vínculo(s)</span>}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center space-x-1">
+                        {isEditing ? (
+                          <>
+                            <button onClick={() => saveEditOwner(owner)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingOwner(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEditOwner(owner)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => removeOwner(owner)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
-                  
-                  <div className="flex items-center space-x-1">
-                    {isEditing ? (
-                      <>
-                        <button onClick={() => saveEditOwner(owner)} className="p-1 text-green-600 hover:bg-green-50 rounded">
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setEditingOwner(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEditOwner(owner)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => removeOwner(owner)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
                 </li>
               );
             })}
@@ -291,9 +321,36 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
             <AlertTriangle className="w-5 h-5 mr-2" /> Danger Zone
           </h3>
           <p className="text-sm text-gray-500 mb-4">Esta ação apagará permanentemente todos os seus dados locais. Não pode ser desfeita.</p>
-          <button onClick={resetData} className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-medium transition-colors">
-            Apagar todos os dados
-          </button>
+          
+          {!confirmReset ? (
+            <button 
+              onClick={() => setConfirmReset(true)} 
+              className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-medium transition-colors"
+            >
+              Apagar todos os dados
+            </button>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <span className="text-sm text-red-800 font-medium">Tem certeza absoluta?</span>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    resetData();
+                    setConfirmReset(false);
+                  }} 
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors"
+                >
+                  Sim, apagar tudo
+                </button>
+                <button 
+                  onClick={() => setConfirmReset(false)} 
+                  className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

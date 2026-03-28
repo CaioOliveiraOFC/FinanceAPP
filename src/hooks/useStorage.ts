@@ -82,10 +82,8 @@ export function useStorage() {
   }, []);
 
   const resetData = useCallback(() => {
-    if (window.confirm('Tem certeza? Isso apagará TODOS os seus dados localmente.')) {
-      localStorage.clear();
-      updateData({ transactions: [], categories: [], owners: [] });
-    }
+    localStorage.removeItem(STORAGE_KEY);
+    updateData({ transactions: [], categories: [], owners: [] });
   }, [updateData]);
 
   return {

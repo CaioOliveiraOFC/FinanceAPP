@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Trash2, Edit3, CheckSquare, Square, Users, MoreHorizontal } from 'lucide-react';
+import { Search, Trash2, Edit3, CheckSquare, Square, Users, MoreHorizontal, X } from 'lucide-react';
 import { Transaction } from '../types';
 import { formatPeriod } from '../utils/date';
 import TransactionDetailsModal from './TransactionDetailsModal';
@@ -51,6 +51,8 @@ export default function TransactionTable({
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedTransactionForDetails, setSelectedTransactionForDetails] = useState<Transaction | null>(null);
 
+  const [confirmDeleteIds, setConfirmDeleteIds] = useState<Set<string>>(new Set());
+
   const toggleSelectAll = () => {
     if (selectedIds.size === transactions.length) {
       setSelectedIds(new Set());
@@ -85,10 +87,19 @@ export default function TransactionTable({
   };
 
   const handleDeleteSelected = () => {
-    if (selectedIds.size > 0 && window.confirm(`Excluir ${selectedIds.size} transações?`)) {
-      onDelete(Array.from(selectedIds));
-      setSelectedIds(new Set());
+    if (selectedIds.size > 0) {
+      setConfirmDeleteIds(new Set(selectedIds));
     }
+  };
+
+  const confirmDeletion = () => {
+    onDelete(Array.from(confirmDeleteIds));
+    setSelectedIds(new Set());
+    setConfirmDeleteIds(new Set());
+  };
+
+  const cancelDeletion = () => {
+    setConfirmDeleteIds(new Set());
   };
 
   const formatCurrency = (value: number) => {
@@ -175,41 +186,51 @@ export default function TransactionTable({
               {selectedIds.size} selecionada(s)
             </span>
             <div className="flex items-center gap-2">
-              <select
-                value={batchCategory}
-                onChange={(e) => setBatchCategory(e.target.value)}
-                className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
-              >
-                <option value="">Alterar Categoria...</option>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              
-              <select
-                value={batchOwner}
-                onChange={(e) => setBatchOwner(e.target.value)}
-                className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
-              >
-                <option value="">Alterar Responsável...</option>
-                {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
+              {confirmDeleteIds.size > 0 && confirmDeleteIds.size === selectedIds.size ? (
+                <div className="flex items-center gap-2 bg-red-50 px-3 py-1.5 rounded border border-red-200">
+                  <span className="text-sm text-red-700 font-medium">Excluir {confirmDeleteIds.size}?</span>
+                  <button onClick={confirmDeletion} className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">Sim</button>
+                  <button onClick={cancelDeletion} className="px-2 py-1 bg-white text-gray-700 border border-gray-300 text-xs rounded hover:bg-gray-50">Não</button>
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={batchCategory}
+                    onChange={(e) => setBatchCategory(e.target.value)}
+                    className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="">Alterar Categoria...</option>
+                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  
+                  <select
+                    value={batchOwner}
+                    onChange={(e) => setBatchOwner(e.target.value)}
+                    className="px-2 py-1.5 text-sm border border-blue-200 rounded bg-white text-blue-900 focus:ring-1 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="">Alterar Responsável...</option>
+                    {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
 
-              <button
-                onClick={handleBatchApply}
-                disabled={!batchCategory && !batchOwner}
-                className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Aplicar
-              </button>
-              
-              <div className="w-px h-6 bg-blue-200 mx-1"></div>
-              
-              <button
-                onClick={handleDeleteSelected}
-                className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors"
-                title="Excluir selecionadas"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                  <button
+                    onClick={handleBatchApply}
+                    disabled={!batchCategory && !batchOwner}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Aplicar
+                  </button>
+                  
+                  <div className="w-px h-6 bg-blue-200 mx-1"></div>
+                  
+                  <button
+                    onClick={handleDeleteSelected}
+                    className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors"
+                    title="Excluir selecionadas"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -316,16 +337,38 @@ export default function TransactionTable({
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (window.confirm('Excluir esta transação?')) {
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirmDeleteIds.has(t.id)) {
                               onDelete([t.id]);
+                              const newSet = new Set(confirmDeleteIds);
+                              newSet.delete(t.id);
+                              setConfirmDeleteIds(newSet);
+                            } else {
+                              const newSet = new Set(confirmDeleteIds);
+                              newSet.add(t.id);
+                              setConfirmDeleteIds(newSet);
                             }
                           }}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="Excluir"
+                          className={`p-1.5 rounded transition-colors ${confirmDeleteIds.has(t.id) ? 'text-white bg-red-600 hover:bg-red-700' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
+                          title={confirmDeleteIds.has(t.id) ? "Confirmar exclusão" : "Excluir"}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
+                        {confirmDeleteIds.has(t.id) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newSet = new Set(confirmDeleteIds);
+                              newSet.delete(t.id);
+                              setConfirmDeleteIds(newSet);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            title="Cancelar"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

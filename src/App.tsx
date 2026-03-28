@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useStorage } from './hooks/useStorage';
 import { useTransactions } from './hooks/useTransactions';
+import { useHistory } from './hooks/useHistory';
 import Dashboard from './components/Dashboard';
 import TransactionTable from './components/TransactionTable';
 import CSVUploader from './components/CSVUploader';
@@ -8,14 +9,45 @@ import Settings from './components/Settings';
 import TransactionModal from './components/TransactionModal';
 import SplitModal from './components/SplitModal';
 import { formatPeriod } from './utils/date';
-import { LayoutDashboard, Settings as SettingsIcon, Wallet, Plus, FileSpreadsheet } from 'lucide-react';
-import { Transaction } from './types';
+import { LayoutDashboard, Settings as SettingsIcon, Wallet, Plus, FileSpreadsheet, Undo2, Redo2 } from 'lucide-react';
+import { Transaction, AppData } from './types';
 
 type Tab = 'finance' | 'project';
 
 export default function App() {
   const { data, updateData, exportBackup, importBackup, resetData, isLoaded } = useStorage();
-  const txHooks = useTransactions(data, updateData);
+  const { pushState, undo, redo, canUndo, canRedo } = useHistory();
+
+  const handleUpdateData = useCallback((newData: Partial<AppData>) => {
+    pushState(data);
+    updateData(newData);
+  }, [data, pushState, updateData]);
+
+  const handleUndo = () => {
+    undo(data, updateData);
+  };
+
+  const handleRedo = () => {
+    redo(data, updateData);
+  };
+
+  const handleResetData = useCallback(() => {
+    pushState(data);
+    localStorage.removeItem('finance_app_data');
+    updateData({ transactions: [], categories: ['Alimentação', 'Transporte', 'Moradia', 'Lazer', 'Saúde', 'Outros'], owners: ['Caio', 'Família'] });
+  }, [data, pushState, updateData]);
+
+  const handleImportBackup = useCallback((json: string) => {
+    pushState(data);
+    const success = importBackup(json);
+    if (!success) {
+      // If import failed, we might want to pop the state, but our hook doesn't have pop.
+      // For now, it's okay.
+    }
+    return success;
+  }, [data, pushState, importBackup]);
+
+  const txHooks = useTransactions(data, handleUpdateData);
   
   const [activeTab, setActiveTab] = useState<Tab>('finance');
   
@@ -65,7 +97,31 @@ export default function App() {
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <Wallet className="w-8 h-8 text-blue-600 mr-3" />
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight">FinanceApp</h1>
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight mr-6">FinanceApp</h1>
+              
+              {/* Undo / Redo Buttons */}
+              <div className="flex items-center space-x-1 border-l border-gray-200 pl-6">
+                <button
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  className={`p-2 rounded-lg transition-colors ${
+                    canUndo ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
+                  }`}
+                  title="Desfazer"
+                >
+                  <Undo2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  className={`p-2 rounded-lg transition-colors ${
+                    canRedo ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
+                  }`}
+                  title="Refazer"
+                >
+                  <Redo2 className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <nav className="flex space-x-2 items-center">
               <button
@@ -223,10 +279,10 @@ export default function App() {
                 </div>
                 <Settings 
                   data={data}
-                  updateData={updateData}
+                  updateData={handleUpdateData}
                   exportBackup={exportBackup}
-                  importBackup={importBackup}
-                  resetData={resetData}
+                  importBackup={handleImportBackup}
+                  resetData={handleResetData}
                 />
               </div>
             )}

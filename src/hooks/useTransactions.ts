@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback } from 'react';
 import { Transaction, AppData } from '../types';
 import { generateTransactionId } from '../utils/hash';
 import { generateInstallments } from '../utils/installments';
-import { useHistory } from './useHistory';
 
 export function useTransactions(
   data: AppData,
@@ -13,8 +12,6 @@ export function useTransactions(
   const [filterCategory, setFilterCategory] = useState('');
   const [filterOwner, setFilterOwner] = useState('');
 
-  const history = useHistory(data.transactions, (txs) => updateData({ transactions: txs }));
-
   // 1. Lógica de Importação (Deduplicação)
   const importTransactions = useCallback(
     (newTransactions: Transaction[]) => {
@@ -23,7 +20,6 @@ export function useTransactions(
       const uniqueNewTransactions = expandedTransactions.filter((t) => !existingIds.has(t.id));
 
       if (uniqueNewTransactions.length > 0) {
-        history.pushState();
         updateData({
           transactions: [...data.transactions, ...uniqueNewTransactions].sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -31,7 +27,7 @@ export function useTransactions(
         });
       }
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   // 2. Lógica de Atualização (Inline e Batch)
@@ -44,58 +40,53 @@ export function useTransactions(
       
       const expandedTransactions = generateInstallments(newTransaction);
       
-      history.pushState();
       updateData({
         transactions: [...expandedTransactions, ...data.transactions].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         ),
       });
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   const updateTransaction = useCallback(
     (id: string, updates: Partial<Transaction>) => {
-      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       });
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   const batchUpdate = useCallback(
     (ids: string[], updates: Partial<Transaction>) => {
       const idSet = new Set(ids);
-      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => (idSet.has(t.id) ? { ...t, ...updates } : t)),
       });
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   const deleteTransactions = useCallback(
     (ids: string[]) => {
       const idSet = new Set(ids);
-      history.pushState();
       updateData({
         transactions: data.transactions.filter((t) => !idSet.has(t.id)),
       });
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   const applySplit = useCallback(
     (id: string, splitsData: Array<{ with: string; percentage: number; amount: number }> | undefined) => {
-      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => 
           t.id === id ? { ...t, splits: splitsData } : t
         ),
       });
     },
-    [data.transactions, updateData, history]
+    [data.transactions, updateData]
   );
 
   // 3. Lógica de Filtragem
