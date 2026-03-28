@@ -115,16 +115,15 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
   };
 
   const handleSplitEqually = () => {
-    if (availableOwners.length === 0) return;
+    if (splits.length === 0) return;
     
-    // Total people = original owner + all available owners
-    const totalPeople = availableOwners.length + 1;
+    // Total people = original owner + people in splits
+    const totalPeople = splits.length + 1;
     const equalPercentage = 100 / totalPeople;
     const equalAmount = transaction.amount / totalPeople;
 
-    const newSplits = availableOwners.map((owner, index) => ({
-      id: `split-${Date.now()}-${index}`,
-      with: owner,
+    const newSplits = splits.map((split) => ({
+      ...split,
       percentage: equalPercentage,
       amount: equalAmount
     }));
@@ -185,7 +184,7 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
                 <div className="flex gap-2">
                   <button
                     onClick={handleSplitEqually}
-                    disabled={isInvalid || availableOwners.length === 0}
+                    disabled={splits.length === 0}
                     className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center disabled:opacity-50"
                   >
                     Dividir Igualmente
