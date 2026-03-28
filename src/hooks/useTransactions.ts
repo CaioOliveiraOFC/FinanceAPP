@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Transaction, AppData } from '../types';
+import { generateTransactionId } from '../utils/hash';
 
 export function useTransactions(
   data: AppData,
@@ -28,6 +29,22 @@ export function useTransactions(
   );
 
   // 2. Lógica de Atualização (Inline e Batch)
+  const addTransaction = useCallback(
+    (transaction: Omit<Transaction, 'id'>) => {
+      const newTransaction: Transaction = {
+        ...transaction,
+        id: generateTransactionId(transaction.date, transaction.title, transaction.amount),
+      };
+      
+      updateData({
+        transactions: [newTransaction, ...data.transactions].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+      });
+    },
+    [data.transactions, updateData]
+  );
+
   const updateTransaction = useCallback(
     (id: string, updates: Partial<Transaction>) => {
       updateData({
@@ -52,6 +69,17 @@ export function useTransactions(
       const idSet = new Set(ids);
       updateData({
         transactions: data.transactions.filter((t) => !idSet.has(t.id)),
+      });
+    },
+    [data.transactions, updateData]
+  );
+
+  const applySplit = useCallback(
+    (id: string, splitData: { with: string; percentage: number; amount: number } | undefined) => {
+      updateData({
+        transactions: data.transactions.map((t) => 
+          t.id === id ? { ...t, split: splitData } : t
+        ),
       });
     },
     [data.transactions, updateData]
@@ -92,8 +120,10 @@ export function useTransactions(
 
     // Ações
     importTransactions,
+    addTransaction,
     updateTransaction,
     batchUpdate,
     deleteTransactions,
+    applySplit,
   };
 }

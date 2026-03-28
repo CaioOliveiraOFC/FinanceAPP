@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { UploadCloud, X, Check, AlertCircle, FileText } from 'lucide-react';
 import { Transaction } from '../types';
 import { generateTransactionId } from '../utils/hash';
+import { parseTransactionTitle } from '../utils/parser';
 
 interface CSVUploaderProps {
   onImport: (transactions: Transaction[]) => void;
@@ -42,10 +43,10 @@ export default function CSVUploader({
             }, {} as any);
 
             const date = normalizedRow.date;
-            const title = normalizedRow.title;
+            const rawTitle = normalizedRow.title;
             const amountStr = normalizedRow.amount;
 
-            if (!date || !title || amountStr === undefined) {
+            if (!date || !rawTitle || amountStr === undefined) {
               throw new Error(`Linha ${index + 2} inválida. Certifique-se de que o cabeçalho contém: date, title, amount.`);
             }
 
@@ -56,13 +57,16 @@ export default function CSVUploader({
               throw new Error(`Valor inválido na linha ${index + 2}.`);
             }
 
+            const { cleanTitle, installment } = parseTransactionTitle(rawTitle);
+
             return {
-              id: generateTransactionId(date, title, amount),
+              id: generateTransactionId(date, rawTitle, amount), // Usa o rawTitle para o hash manter a unicidade
               date,
-              title,
+              title: cleanTitle,
               amount,
               category: defaultCategory,
               owner: defaultOwner,
+              installment,
             };
           });
 
@@ -187,7 +191,14 @@ export default function CSVUploader({
                     {parsedTransactions.slice(0, 5).map((t, i) => (
                       <tr key={i} className="hover:bg-gray-50/50">
                         <td className="px-4 py-3 text-gray-600">{t.date}</td>
-                        <td className="px-4 py-3 text-gray-900 font-medium">{t.title}</td>
+                        <td className="px-4 py-3 text-gray-900 font-medium">
+                          {t.title}
+                          {t.installment && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              {t.installment.current}/{t.installment.total}
+                            </span>
+                          )}
+                        </td>
                         <td className={`px-4 py-3 text-right font-medium ${t.amount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                           {t.amount > 0 ? '-' : '+'}{Math.abs(t.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </td>

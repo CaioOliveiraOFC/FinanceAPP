@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, Trash2, Edit3, CheckSquare, Square } from 'lucide-react';
+import { Search, Trash2, Edit3, CheckSquare, Square, Users, MoreHorizontal } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface TransactionTableProps {
@@ -9,6 +9,8 @@ interface TransactionTableProps {
   onUpdate: (id: string, updates: Partial<Transaction>) => void;
   onBatchUpdate: (ids: string[], updates: Partial<Transaction>) => void;
   onDelete: (ids: string[]) => void;
+  onEditClick: (transaction: Transaction) => void;
+  onSplitClick: (transaction: Transaction) => void;
   // Props de Filtro
   searchTerm: string;
   setSearchTerm: (v: string) => void;
@@ -28,6 +30,8 @@ export default function TransactionTable({
   onUpdate,
   onBatchUpdate,
   onDelete,
+  onEditClick,
+  onSplitClick,
   searchTerm,
   setSearchTerm,
   filterMonth,
@@ -146,7 +150,7 @@ export default function TransactionTable({
           </div>
         </div>
 
-        {/* Batch Actions Bar (Aparece apenas se houver itens selecionados) */}
+        {/* Batch Actions Bar */}
         {selectedIds.size > 0 && (
           <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg animate-in fade-in slide-in-from-top-2">
             <span className="text-sm font-medium text-blue-800">
@@ -212,12 +216,13 @@ export default function TransactionTable({
               <th className="px-4 py-3">Categoria</th>
               <th className="px-4 py-3">Responsável</th>
               <th className="px-4 py-3 text-right">Valor</th>
+              <th className="px-4 py-3 text-center w-24">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                   Nenhuma transação encontrada.
                 </td>
               </tr>
@@ -235,8 +240,23 @@ export default function TransactionTable({
                       </button>
                     </td>
                     <td className="px-4 py-3 text-gray-500">{formatDate(t.date)}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900 truncate max-w-[200px]" title={t.title}>
-                      {t.title}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center">
+                        <span className="font-medium text-gray-900 truncate max-w-[200px]" title={t.title}>
+                          {t.title}
+                        </span>
+                        {t.installment && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                            {t.installment.current}/{t.installment.total}
+                          </span>
+                        )}
+                        {t.split && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800" title={`Dividido com ${t.split.with} (${t.split.percentage}%)`}>
+                            <Users className="w-3 h-3 mr-1" />
+                            {t.split.percentage}%
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <select
@@ -258,6 +278,35 @@ export default function TransactionTable({
                     </td>
                     <td className={`px-4 py-3 text-right font-medium ${t.amount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                       {t.amount > 0 ? '-' : '+'}{formatCurrency(t.amount)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => onSplitClick(t)}
+                          className={`p-1.5 rounded transition-colors ${t.split ? 'text-purple-600 bg-purple-50 hover:bg-purple-100' : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'}`}
+                          title="Dividir Conta"
+                        >
+                          <Users className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onEditClick(t)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="Editar"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm('Excluir esta transação?')) {
+                              onDelete([t.id]);
+                            }
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

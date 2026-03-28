@@ -5,6 +5,15 @@ export interface Transaction {
   amount: number; // Positivo = despesa, Negativo = receita (ou vice-versa, ajustaremos na UI)
   category: string;
   owner: string;
+  installment?: {
+    current: number;
+    total: number;
+  };
+  split?: {
+    with: string;
+    percentage: number;
+    amount: number;
+  };
 }
 
 export interface AppData {
