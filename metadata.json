@@ -1,0 +1,5 @@
+{
+  "name": "Finance App",
+  "description": "Client-side personal finance manager with CSV import, batch editing, and Recharts dashboard.",
+  "requestFramePermissions": []
+}
