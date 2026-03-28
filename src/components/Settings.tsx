@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { AppData } from '../types';
-import { Trash2, Plus, Download, Upload, AlertTriangle } from 'lucide-react';
+import { Trash2, Plus, Download, Upload, AlertTriangle, Edit2, Check, X } from 'lucide-react';
 
 interface SettingsProps {
   data: AppData;
@@ -13,6 +13,13 @@ interface SettingsProps {
 export default function Settings({ data, updateData, exportBackup, importBackup, resetData }: SettingsProps) {
   const [newCat, setNewCat] = useState('');
   const [newOwner, setNewOwner] = useState('');
+  
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editCatValue, setEditCatValue] = useState('');
+
+  const [editingOwner, setEditingOwner] = useState<string | null>(null);
+  const [editOwnerValue, setEditOwnerValue] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addCategory = () => {
@@ -23,7 +30,38 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
   };
 
   const removeCategory = (cat: string) => {
+    const count = data.transactions.filter(t => t.category === cat).length;
+    if (count > 0) {
+      if (!window.confirm(`Esta categoria está sendo usada em ${count} transações. Tem certeza que deseja excluí-la?`)) {
+        return;
+      }
+    }
     updateData({ categories: data.categories.filter(c => c !== cat) });
+  };
+
+  const startEditCategory = (cat: string) => {
+    setEditingCat(cat);
+    setEditCatValue(cat);
+  };
+
+  const saveEditCategory = (oldCat: string) => {
+    const newCat = editCatValue.trim();
+    if (!newCat || newCat === oldCat) {
+      setEditingCat(null);
+      return;
+    }
+    if (data.categories.includes(newCat)) {
+      alert('Categoria já existe!');
+      return;
+    }
+    
+    const newCategories = data.categories.map(c => c === oldCat ? newCat : c);
+    const newTransactions = data.transactions.map(t => 
+      t.category === oldCat ? { ...t, category: newCat } : t
+    );
+    
+    updateData({ categories: newCategories, transactions: newTransactions });
+    setEditingCat(null);
   };
 
   const addOwner = () => {
@@ -34,7 +72,43 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
   };
 
   const removeOwner = (owner: string) => {
+    const count = data.transactions.filter(t => t.owner === owner || t.splits?.some(s => s.with === owner)).length;
+    if (count > 0) {
+      if (!window.confirm(`Este responsável está vinculado a ${count} transações/divisões. Tem certeza que deseja excluí-lo?`)) {
+        return;
+      }
+    }
     updateData({ owners: data.owners.filter(o => o !== owner) });
+  };
+
+  const startEditOwner = (owner: string) => {
+    setEditingOwner(owner);
+    setEditOwnerValue(owner);
+  };
+
+  const saveEditOwner = (oldOwner: string) => {
+    const newOwner = editOwnerValue.trim();
+    if (!newOwner || newOwner === oldOwner) {
+      setEditingOwner(null);
+      return;
+    }
+    if (data.owners.includes(newOwner)) {
+      alert('Responsável já existe!');
+      return;
+    }
+    
+    const newOwners = data.owners.map(o => o === oldOwner ? newOwner : o);
+    const newTransactions = data.transactions.map(t => {
+      let updated = { ...t };
+      if (updated.owner === oldOwner) updated.owner = newOwner;
+      if (updated.splits) {
+        updated.splits = updated.splits.map(s => s.with === oldOwner ? { ...s, with: newOwner } : s);
+      }
+      return updated;
+    });
+    
+    updateData({ owners: newOwners, transactions: newTransactions });
+    setEditingOwner(null);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,14 +150,54 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
             </button>
           </div>
           <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {data.categories.map(cat => (
-              <li key={cat} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors">
-                <span className="text-gray-700">{cat}</span>
-                <button onClick={() => removeCategory(cat)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </li>
-            ))}
+            {data.categories.map(cat => {
+              const count = data.transactions.filter(t => t.category === cat).length;
+              const isEditing = editingCat === cat;
+
+              return (
+                <li key={cat} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {isEditing ? (
+                    <div className="flex items-center flex-1 mr-2">
+                      <input
+                        type="text"
+                        value={editCatValue}
+                        onChange={e => setEditCatValue(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEditCategory(cat)}
+                        autoFocus
+                        className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      <span className="text-gray-700 font-medium">{cat}</span>
+                      {count > 0 && <span className="text-xs text-gray-400">{count} transação(ões)</span>}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-1">
+                    {isEditing ? (
+                      <>
+                        <button onClick={() => saveEditCategory(cat)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingCat(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => removeCategory(cat)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -104,14 +218,54 @@ export default function Settings({ data, updateData, exportBackup, importBackup,
             </button>
           </div>
           <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {data.owners.map(owner => (
-              <li key={owner} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors">
-                <span className="text-gray-700">{owner}</span>
-                <button onClick={() => removeOwner(owner)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </li>
-            ))}
+            {data.owners.map(owner => {
+              const count = data.transactions.filter(t => t.owner === owner || t.splits?.some(s => s.with === owner)).length;
+              const isEditing = editingOwner === owner;
+
+              return (
+                <li key={owner} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-colors border border-transparent hover:border-gray-100">
+                  {isEditing ? (
+                    <div className="flex items-center flex-1 mr-2">
+                      <input
+                        type="text"
+                        value={editOwnerValue}
+                        onChange={e => setEditOwnerValue(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEditOwner(owner)}
+                        autoFocus
+                        className="flex-1 px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      <span className="text-gray-700 font-medium">{owner}</span>
+                      {count > 0 && <span className="text-xs text-gray-400">{count} vínculo(s)</span>}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-1">
+                    {isEditing ? (
+                      <>
+                        <button onClick={() => saveEditOwner(owner)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingOwner(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditOwner(owner)} className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => removeOwner(owner)} className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-red-50">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>

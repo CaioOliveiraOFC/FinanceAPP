@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Users } from 'lucide-react';
 import { Transaction } from '../types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
@@ -8,26 +9,48 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
   // Consideramos apenas despesas (amount > 0) para os gráficos de gastos
   const expenses = useMemo(() => transactions.filter(t => t.amount > 0), [transactions]);
 
+  // Total de despesas (soma bruta de todas as transações)
   const totalExpenses = useMemo(() => expenses.reduce((acc, t) => acc + t.amount, 0), [expenses]);
 
+  // Gastos Reais por Responsável (Considerando Splits)
   const expensesByOwner = useMemo(() => {
-    const map = expenses.reduce((acc, t) => {
-      acc[t.owner] = (acc[t.owner] || 0) + t.amount;
-      return acc;
-    }, {} as Record<string, number>);
+    const map: Record<string, number> = {};
+
+    expenses.forEach(t => {
+      if (t.splits && t.splits.length > 0) {
+        // Se tem splits, o owner original paga (Total - Soma dos Splits)
+        const totalSplitAmount = t.splits.reduce((acc, s) => acc + s.amount, 0);
+        const ownerShare = t.amount - totalSplitAmount;
+        map[t.owner] = (map[t.owner] || 0) + ownerShare;
+        
+        // E as pessoas com quem dividiu pagam o valor do Split
+        t.splits.forEach(s => {
+          map[s.with] = (map[s.with] || 0) + s.amount;
+        });
+      } else {
+        // Sem split, o owner paga 100%
+        map[t.owner] = (map[t.owner] || 0) + t.amount;
+      }
+    });
+
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [expenses]);
 
+  // Gastos por Categoria (A categoria da transação original se mantém)
   const expensesByCategory = useMemo(() => {
-    const map = expenses.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + t.amount;
-      return acc;
-    }, {} as Record<string, number>);
+    const map: Record<string, number> = {};
+    expenses.forEach(t => {
+      map[t.category] = (map[t.category] || 0) + t.amount;
+    });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
+  }, [expenses]);
+
+  const sharedExpenses = useMemo(() => {
+    return expenses.filter(t => t.splits && t.splits.length > 0);
   }, [expenses]);
 
   const formatCurrency = (value: number) => 
@@ -43,7 +66,7 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
         </div>
         
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 md:col-span-2">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Gastos por Responsável</h3>
+          <h3 className="text-sm font-medium text-gray-500 mb-3">Gastos Reais por Responsável (Considerando Divisões)</h3>
           <div className="flex flex-wrap gap-6">
             {expensesByOwner.map(owner => (
               <div key={owner.name} className="flex flex-col">
@@ -113,6 +136,50 @@ export default function Dashboard({ transactions }: { transactions: Transaction[
           </div>
         </div>
       </div>
+
+      {/* Despesas Compartilhadas */}
+      {sharedExpenses.length > 0 && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center space-x-2 mb-4">
+            <Users className="w-5 h-5 text-purple-600" />
+            <h3 className="text-base font-semibold text-gray-900">Despesas Compartilhadas</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sharedExpenses.map(tx => {
+              const totalSplitPercentage = tx.splits!.reduce((acc, s) => acc + s.percentage, 0);
+              const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
+              const originalOwnerAmount = Math.max(0, tx.amount - tx.splits!.reduce((acc, s) => acc + s.amount, 0));
+
+              return (
+                <div key={tx.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="flex justify-between items-start mb-3">
+                    <p className="font-medium text-gray-900 truncate pr-2" title={tx.title}>{tx.title}</p>
+                    <p className="font-bold text-gray-900">{formatCurrency(tx.amount)}</p>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">{tx.owner} <span className="text-xs text-gray-400">(Pagador)</span></span>
+                      <div className="text-right">
+                        <span className="font-medium text-gray-900">{originalOwnerPercentage.toFixed(1)}%</span>
+                        <span className="text-gray-500 ml-2">({formatCurrency(originalOwnerAmount)})</span>
+                      </div>
+                    </div>
+                    {tx.splits!.map((s, i) => (
+                      <div key={i} className="flex justify-between items-center">
+                        <span className="text-gray-600">{s.with}</span>
+                        <div className="text-right">
+                          <span className="font-medium text-purple-600">{s.percentage.toFixed(1)}%</span>
+                          <span className="text-gray-500 ml-2">({formatCurrency(s.amount)})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

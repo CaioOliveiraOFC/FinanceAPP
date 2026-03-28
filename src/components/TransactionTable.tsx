@@ -250,10 +250,10 @@ export default function TransactionTable({
                             {t.installment.current}/{t.installment.total}
                           </span>
                         )}
-                        {t.split && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800" title={`Dividido com ${t.split.with} (${t.split.percentage}%)`}>
+                        {t.splits && t.splits.length > 0 && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800" title={`Dividido com ${t.splits.map(s => s.with).join(', ')}`}>
                             <Users className="w-3 h-3 mr-1" />
-                            {t.split.percentage}%
+                            {t.splits.length > 1 ? 'Múltiplos' : `${t.splits[0].percentage}%`}
                           </span>
                         )}
                       </div>
@@ -283,7 +283,7 @@ export default function TransactionTable({
                       <div className="flex items-center justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => onSplitClick(t)}
-                          className={`p-1.5 rounded transition-colors ${t.split ? 'text-purple-600 bg-purple-50 hover:bg-purple-100' : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'}`}
+                          className={`p-1.5 rounded transition-colors ${t.splits && t.splits.length > 0 ? 'text-purple-600 bg-purple-50 hover:bg-purple-100' : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'}`}
                           title="Dividir Conta"
                         >
                           <Users className="w-4 h-4" />

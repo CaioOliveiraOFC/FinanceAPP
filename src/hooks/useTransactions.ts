@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Transaction, AppData } from '../types';
 import { generateTransactionId } from '../utils/hash';
+import { generateInstallments } from '../utils/installments';
+import { useHistory } from './useHistory';
 
 export function useTransactions(
   data: AppData,
@@ -11,13 +13,17 @@ export function useTransactions(
   const [filterCategory, setFilterCategory] = useState('');
   const [filterOwner, setFilterOwner] = useState('');
 
+  const history = useHistory(data.transactions, (txs) => updateData({ transactions: txs }));
+
   // 1. Lógica de Importação (Deduplicação)
   const importTransactions = useCallback(
     (newTransactions: Transaction[]) => {
+      const expandedTransactions = newTransactions.flatMap(generateInstallments);
       const existingIds = new Set(data.transactions.map((t) => t.id));
-      const uniqueNewTransactions = newTransactions.filter((t) => !existingIds.has(t.id));
+      const uniqueNewTransactions = expandedTransactions.filter((t) => !existingIds.has(t.id));
 
       if (uniqueNewTransactions.length > 0) {
+        history.pushState();
         updateData({
           transactions: [...data.transactions, ...uniqueNewTransactions].sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -25,7 +31,7 @@ export function useTransactions(
         });
       }
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   // 2. Lógica de Atualização (Inline e Batch)
@@ -36,53 +42,60 @@ export function useTransactions(
         id: generateTransactionId(transaction.date, transaction.title, transaction.amount),
       };
       
+      const expandedTransactions = generateInstallments(newTransaction);
+      
+      history.pushState();
       updateData({
-        transactions: [newTransaction, ...data.transactions].sort(
+        transactions: [...expandedTransactions, ...data.transactions].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         ),
       });
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   const updateTransaction = useCallback(
     (id: string, updates: Partial<Transaction>) => {
+      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       });
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   const batchUpdate = useCallback(
     (ids: string[], updates: Partial<Transaction>) => {
       const idSet = new Set(ids);
+      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => (idSet.has(t.id) ? { ...t, ...updates } : t)),
       });
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   const deleteTransactions = useCallback(
     (ids: string[]) => {
       const idSet = new Set(ids);
+      history.pushState();
       updateData({
         transactions: data.transactions.filter((t) => !idSet.has(t.id)),
       });
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   const applySplit = useCallback(
-    (id: string, splitData: { with: string; percentage: number; amount: number } | undefined) => {
+    (id: string, splitsData: Array<{ with: string; percentage: number; amount: number }> | undefined) => {
+      history.pushState();
       updateData({
         transactions: data.transactions.map((t) => 
-          t.id === id ? { ...t, split: splitData } : t
+          t.id === id ? { ...t, splits: splitsData } : t
         ),
       });
     },
-    [data.transactions, updateData]
+    [data.transactions, updateData, history]
   );
 
   // 3. Lógica de Filtragem
@@ -125,5 +138,11 @@ export function useTransactions(
     batchUpdate,
     deleteTransactions,
     applySplit,
+    
+    // Histórico
+    undo: history.undo,
+    redo: history.redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
   };
 }

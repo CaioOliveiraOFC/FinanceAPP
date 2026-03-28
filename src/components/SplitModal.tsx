@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Users, Percent } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Users, Percent, Plus, Trash2 } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface SplitModalProps {
@@ -7,77 +7,118 @@ interface SplitModalProps {
   onClose: () => void;
   transaction: Transaction | null;
   owners: string[];
-  onApplySplit: (id: string, splitData: { with: string; percentage: number; amount: number } | undefined) => void;
+  onApplySplit: (id: string, splitsData: Array<{ with: string; percentage: number; amount: number }> | undefined) => void;
+}
+
+interface SplitEntry {
+  id: string;
+  with: string;
+  percentage: number;
+  amount: number;
 }
 
 export default function SplitModal({ isOpen, onClose, transaction, owners, onApplySplit }: SplitModalProps) {
-  const [splitWith, setSplitWith] = useState('');
-  const [percentage, setPercentage] = useState<number>(50);
-  const [amount, setAmount] = useState<number>(0);
+  const [splits, setSplits] = useState<SplitEntry[]>([]);
+
+  const availableOwners = useMemo(() => {
+    if (!transaction) return [];
+    return owners.filter(o => o !== transaction.owner);
+  }, [transaction, owners]);
 
   useEffect(() => {
     if (isOpen && transaction) {
-      if (transaction.split) {
-        setSplitWith(transaction.split.with);
-        setPercentage(transaction.split.percentage);
-        setAmount(transaction.split.amount);
+      if (transaction.splits && transaction.splits.length > 0) {
+        setSplits(transaction.splits.map((s, i) => ({ ...s, id: `split-${i}` })));
       } else {
-        // Default: 50% split with the first available owner that is not the original owner
-        const availableOwners = owners.filter(o => o !== transaction.owner);
-        setSplitWith(availableOwners[0] || '');
-        setPercentage(50);
-        setAmount(transaction.amount * 0.5);
+        // Default: 1 split with 50%
+        if (availableOwners.length > 0) {
+          setSplits([{
+            id: 'split-0',
+            with: availableOwners[0],
+            percentage: 50,
+            amount: transaction.amount * 0.5
+          }]);
+        } else {
+          setSplits([]);
+        }
       }
     }
-  }, [isOpen, transaction, owners]);
-
-  // Atualiza o valor quando a porcentagem muda
-  const handlePercentageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val) && val >= 0 && val <= 100) {
-      setPercentage(val);
-      if (transaction) {
-        setAmount(transaction.amount * (val / 100));
-      }
-    }
-  };
-
-  // Atualiza a porcentagem quando o valor muda
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val) && transaction && val >= 0 && val <= transaction.amount) {
-      setAmount(val);
-      setPercentage((val / transaction.amount) * 100);
-    }
-  };
+  }, [isOpen, transaction, availableOwners]);
 
   if (!isOpen || !transaction) return null;
 
-  const availableOwners = owners.filter(o => o !== transaction.owner);
+  const totalSplitPercentage = splits.reduce((acc, s) => acc + s.percentage, 0);
+  const totalSplitAmount = splits.reduce((acc, s) => acc + s.amount, 0);
+  const originalOwnerPercentage = Math.max(0, 100 - totalSplitPercentage);
+  const originalOwnerAmount = Math.max(0, transaction.amount - totalSplitAmount);
+
+  const isInvalid = totalSplitPercentage > 100;
+
+  const handleAddSplit = () => {
+    const remainingPercentage = Math.max(0, 100 - totalSplitPercentage);
+    const newPercentage = remainingPercentage > 0 ? remainingPercentage : 0;
+    const newAmount = transaction.amount * (newPercentage / 100);
+    
+    // Find an owner that is not already in the splits if possible
+    const usedOwners = new Set(splits.map(s => s.with));
+    const nextOwner = availableOwners.find(o => !usedOwners.has(o)) || availableOwners[0];
+
+    setSplits([...splits, {
+      id: `split-${Date.now()}`,
+      with: nextOwner,
+      percentage: newPercentage,
+      amount: newAmount
+    }]);
+  };
+
+  const handleRemoveSplit = (id: string) => {
+    setSplits(splits.filter(s => s.id !== id));
+  };
+
+  const handleUpdateSplit = (id: string, field: 'with' | 'percentage' | 'amount', value: string | number) => {
+    setSplits(splits.map(s => {
+      if (s.id !== id) return s;
+
+      const updated = { ...s, [field]: value };
+
+      if (field === 'percentage') {
+        const val = value as number;
+        updated.amount = transaction.amount * (val / 100);
+      } else if (field === 'amount') {
+        const val = value as number;
+        updated.percentage = (val / transaction.amount) * 100;
+      }
+
+      return updated;
+    }));
+  };
 
   const handleSave = () => {
-    if (!splitWith) {
-      alert('Selecione com quem deseja dividir.');
-      return;
+    if (isInvalid) return;
+    
+    if (splits.length === 0) {
+      onApplySplit(transaction.id, undefined);
+    } else {
+      const cleanSplits = splits.map(({ with: w, percentage, amount }) => ({
+        with: w,
+        percentage: Number(percentage.toFixed(2)),
+        amount: Number(amount.toFixed(2))
+      }));
+      onApplySplit(transaction.id, cleanSplits);
     }
-    onApplySplit(transaction.id, {
-      with: splitWith,
-      percentage: Number(percentage.toFixed(2)),
-      amount: Number(amount.toFixed(2)),
-    });
     onClose();
   };
 
-  const handleRemove = () => {
+  const handleRemoveAll = () => {
     onApplySplit(transaction.id, undefined);
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
           <div className="flex items-center space-x-2">
             <Users className="w-5 h-5 text-purple-600" />
             <h3 className="text-lg font-semibold text-gray-900">Dividir Conta</h3>
@@ -87,77 +128,110 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
-          <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm">
-            <p className="text-gray-500 mb-1">Transação Original:</p>
-            <p className="font-medium text-gray-900 truncate">{transaction.title}</p>
-            <p className="font-semibold text-red-600">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(transaction.amount)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Paga por: {transaction.owner}</p>
+        <div className="p-6 space-y-6 overflow-y-auto">
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <p className="text-gray-500 text-sm mb-1">Transação Original:</p>
+                <p className="font-medium text-gray-900">{transaction.title}</p>
+              </div>
+              <p className="font-bold text-lg text-gray-900">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(transaction.amount)}
+              </p>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-700">Parte de {transaction.owner} (Pagador):</span>
+              <div className="text-right">
+                <span className={`text-sm font-bold ${isInvalid ? 'text-red-600' : 'text-purple-600'}`}>
+                  {originalOwnerPercentage.toFixed(1)}%
+                </span>
+                <span className="text-sm text-gray-500 ml-2">
+                  ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(originalOwnerAmount)})
+                </span>
+              </div>
+            </div>
+            {isInvalid && (
+              <p className="text-xs text-red-600 mt-2 text-right">A soma das divisões ultrapassa 100%.</p>
+            )}
           </div>
 
           {availableOwners.length === 0 ? (
-            <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+            <div className="text-sm text-red-600 bg-red-50 p-4 rounded-xl border border-red-100">
               Você precisa cadastrar mais responsáveis nas Configurações para poder dividir contas.
             </div>
           ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dividir com:</label>
-                <select
-                  value={splitWith}
-                  onChange={(e) => setSplitWith(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-sm font-semibold text-gray-900">Divisões (Splits)</h4>
+                <button
+                  onClick={handleAddSplit}
+                  disabled={isInvalid || availableOwners.length === 0}
+                  className="text-sm text-purple-600 font-medium hover:text-purple-700 flex items-center disabled:opacity-50"
                 >
-                  {availableOwners.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
+                  <Plus className="w-4 h-4 mr-1" />
+                  Adicionar
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Porcentagem (%)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={percentage}
-                      onChange={handlePercentageChange}
-                      className="w-full pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
-                    />
-                    <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  </div>
+              {splits.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Nenhuma divisão configurada.</p>
+              ) : (
+                <div className="space-y-3">
+                  {splits.map((split) => (
+                    <div key={split.id} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                      <div className="flex-1">
+                        <select
+                          value={split.with}
+                          onChange={(e) => handleUpdateSplit(split.id, 'with', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none bg-gray-50"
+                        >
+                          {availableOwners.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                      <div className="w-24 relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={split.percentage === 0 ? '' : Number(split.percentage.toFixed(2))}
+                          onChange={(e) => handleUpdateSplit(split.id, 'percentage', parseFloat(e.target.value) || 0)}
+                          className="w-full pl-3 pr-7 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                        <Percent className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                      </div>
+                      <div className="w-28">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={split.amount === 0 ? '' : Number(split.amount.toFixed(2))}
+                          onChange={(e) => handleUpdateSplit(split.id, 'amount', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleRemoveSplit(split.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={transaction.amount}
-                    step="0.01"
-                    value={amount}
-                    onChange={handleAmountChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
-                  />
-                </div>
-              </div>
-              
-              <div className="pt-2 text-sm text-gray-600 text-center">
-                {splitWith || 'Alguém'} vai te dever <strong className="text-gray-900">R$ {amount.toFixed(2)}</strong>.
-              </div>
-            </>
+              )}
+            </div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center">
-          {transaction.split ? (
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center shrink-0">
+          {transaction.splits && transaction.splits.length > 0 ? (
             <button
-              onClick={handleRemove}
+              onClick={handleRemoveAll}
               className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
             >
-              Remover Divisão
+              Remover Todos
             </button>
           ) : (
             <div /> // Spacer
@@ -171,10 +245,10 @@ export default function SplitModal({ isOpen, onClose, transaction, owners, onApp
             </button>
             <button
               onClick={handleSave}
-              disabled={availableOwners.length === 0}
+              disabled={isInvalid || availableOwners.length === 0}
               className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
             >
-              Salvar Divisão
+              Salvar Divisões
             </button>
           </div>
         </div>

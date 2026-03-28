@@ -9,11 +9,11 @@ export interface Transaction {
     current: number;
     total: number;
   };
-  split?: {
+  splits?: Array<{
     with: string;
     percentage: number;
     amount: number;
-  };
+  }>;
 }
 
 export interface AppData {
